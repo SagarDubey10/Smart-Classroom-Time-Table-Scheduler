@@ -1,0 +1,71 @@
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Manage Data</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  </head>
+  <body class="p-4">
+    <div class="container">
+      <h4>Data Manager (Prototype)</h4>
+      <p class="small-muted">Add or remove teachers, subjects, classrooms and assignments. This is a simple interface for demonstration.</p>
+      <div class="row">
+        <div class="col-md-6">
+          <h6>Teachers</h6>
+          <ul id="teachersList"></ul>
+          <input id="tname" class="form-control mb-2" placeholder="Teacher name">
+          <button id="addTeacher" class="btn btn-sm btn-primary mb-3">Add</button>
+
+          <h6>Subjects</h6>
+          <ul id="subjectsList"></ul>
+          <input id="sname" class="form-control mb-2" placeholder="Subject name">
+          <input id="sweekly" class="form-control mb-2" placeholder="Weekly lectures (e.g. 3)" type="number">
+          <input id="sduration" class="form-control mb-2" placeholder="Duration hours (1 or 2)" type="number">
+          <label><input type="checkbox" id="slab"> Is Lab</label>
+          <button id="addSubject" class="btn btn-sm btn-primary mb-3">Add</button>
+
+          <h6>Classrooms</h6>
+          <ul id="roomsList"></ul>
+          <input id="rname" class="form-control mb-2" placeholder="Room name">
+          <button id="addRoom" class="btn btn-sm btn-primary mb-3">Add</button>
+        </div>
+        <div class="col-md-6">
+          <h6>Assignments</h6>
+          <ul id="assignList"></ul>
+          <select id="assignTeacher" class="form-select mb-2"></select>
+          <select id="assignSubject" class="form-select mb-2"></select>
+          <select id="assignClassyear" class="form-select mb-2"></select>
+          <select id="assignRoom" class="form-select mb-2"></select>
+          <button id="addAssign" class="btn btn-sm btn-primary">Add Assignment</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+      function refresh(){
+        $.get('/api/options', function(resp){
+          $('#teachersList').empty(); resp.teachers.forEach(t=> $('#teachersList').append('<li>'+t.name+'</li>'));
+          $('#subjectsList').empty(); resp.subjects.forEach(s=> $('#subjectsList').append('<li>'+s.name+' ('+s.weekly_lectures+'x)</li>'));
+          $('#roomsList').empty(); resp.classrooms.forEach(r=> $('#roomsList').append('<li>'+r.name+'</li>'));
+
+          $('#assignTeacher').empty(); resp.teachers.forEach(t=> $('#assignTeacher').append('<option value="'+t.teacher_id+'">'+t.name+'</option>'));
+          $('#assignSubject').empty(); resp.subjects.forEach(s=> $('#assignSubject').append('<option value="'+s.subject_id+'">'+s.name+'</option>'));
+          $('#assignClassyear').empty(); resp.class_years.forEach(c=> $('#assignClassyear').append('<option value="'+c+'">'+c+'</option>'));
+          $('#assignRoom').empty(); resp.classrooms.forEach(r=> $('#assignRoom').append('<option value="'+r.classroom_id+'">'+r.name+'</option>'));
+
+          $('#assignList').empty(); resp.assignments.forEach(a=> $('#assignList').append('<li>'+a.teacher_name+' → '+a.subject_name+' ('+a.class_year+') in '+a.classroom_name+'</li>'));
+        })
+      }
+
+      $(function(){ refresh();
+        $('#addTeacher').on('click', function(){ $.post('/api/add_teacher',{name:$('#tname').val()}, refresh); });
+        $('#addSubject').on('click', function(){ $.post('/api/add_subject',{name:$('#sname').val(), weekly:$('#sweekly').val(), duration:$('#sduration').val(), is_lab:$('#slab').is(':checked')}, refresh); });
+        $('#addRoom').on('click', function(){ $.post('/api/add_room',{name:$('#rname').val()}, refresh); });
+        $('#addAssign').on('click', function(){ $.post('/api/add_assignment',{teacher_id:$('#assignTeacher').val(), subject_id:$('#assignSubject').val(), class_year:$('#assignClassyear').val(), classroom_id:$('#assignRoom').val()}, refresh); });
+      })
+    </script>
+  </body>
+</html>
