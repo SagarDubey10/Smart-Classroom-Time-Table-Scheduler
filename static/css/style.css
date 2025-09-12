@@ -1,91 +1,97 @@
 body {
-    font-family: Arial, sans-serif;
-    background: #1e1e1e;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #1f1f2e;
     color: #fff;
 }
 
-h1 {
-    text-align: center;
-    margin: 20px 0;
+.container-fluid {
+    max-width: 1400px;
 }
 
-button {
-    margin: 5px;
-    padding: 10px 15px;
-    background: #4CAF50;
-    color: white;
+.card {
+    background-color: #2a2a3d;
     border: none;
-    cursor: pointer;
-    border-radius: 5px;
-}
-
-button:hover {
-    background: #45a049;
-}
-
-#timetable-container {
-    margin: 20px;
-    overflow-x: auto;
-}
-
-table {
-    border-collapse: collapse;
-    width: 100%;
-    margin-bottom: 30px;
-}
-
-td,
-th {
-    border: 1px solid #555;
-    padding: 8px;
-    text-align: center;
-    cursor: pointer;
-}
-
-th {
-    background: #333;
-}
-
-/* Modal */
-.modal {
-    display: none;
-    position: fixed;
-    z-index: 1000;
-    padding-top: 100px;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    overflow: auto;
-    background-color: rgba(0, 0, 0, 0.8);
-}
-
-.modal-content {
-    background: #2e2e2e;
-    margin: auto;
-    padding: 20px;
-    border: 1px solid #888;
-    width: 300px;
     border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }
 
-.close {
-    color: #aaa;
-    float: right;
-    font-size: 28px;
-    font-weight: bold;
-    cursor: pointer;
+.table {
+    color: #fff;
 }
 
-.close:hover {
+.table-dark thead th {
+    background-color: #3a3a4d;
+    color: #fff;
+    border-color: #555;
+}
+
+.table-dark tbody tr:hover {
+    background-color: #3f3f50;
+}
+
+.form-control,
+.btn,
+.form-check-input {
+    border-radius: 5px;
+}
+
+.form-control,
+.form-control:focus {
+    background-color: #3a3a4d;
+    color: #fff;
+    border-color: #555;
+}
+
+.btn-primary {
+    background-color: #007bff;
+    border-color: #007bff;
+}
+
+.btn-primary:hover {
+    background-color: #0056b3;
+    border-color: #004085;
+}
+
+.btn-danger {
+    background-color: #dc3545;
+    border-color: #dc3545;
+}
+
+.btn-danger:hover {
+    background-color: #c82333;
+    border-color: #bd2130;
+}
+
+.btn-secondary {
+    background-color: #6c757d;
+    border-color: #6c757d;
+}
+
+.btn-secondary:hover {
+    background-color: #5a6268;
+    border-color: #545b62;
+}
+
+/* Timetable-specific styling */
+.theory-session {
+    background-color: #4a6fa5;
     color: white;
 }
 
-select,
-input {
-    width: 100%;
-    padding: 8px;
-    margin: 4px 0;
-    border-radius: 5px;
-    border: none;
+.lab-session {
+    background-color: #5c6c7c;
+    color: white;
+}
+
+td small {
+    display: block;
+}
+
+.table-bordered th,
+.table-bordered td {
+    border-color: #444;
+}
+
+.table-responsive {
+    overflow-x: auto;
 }

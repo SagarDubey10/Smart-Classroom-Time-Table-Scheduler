@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin - Timetable</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css" rel="stylesheet">
+<style>
+    body { background-color: #1f1f2e; color: #fff; }
+    .card { background-color: #2a2a3d; margin-top: 20px; }
+    .table { color: #fff; }
+    input, button { background-color: #3a3a4d; color: #fff; border: none; }
+    input:focus { outline: none; }
+</style>
+</head>
+<body>
+<div class="container">
+    <h2 class="mt-4">Admin - Subjects</h2>
+
+    <!-- Add Subject Form -->
+    <div class="card p-3">
+        <form method="POST">
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <input type="text" name="name" class="form-control" placeholder="Subject Name" required>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <input type="number" name="weekly_lectures" class="form-control" placeholder="Weekly Lectures" required>
+                </div>
+                <div class="col-md-2 mb-3">
+                    <button type="submit" class="btn btn-primary w-100">Add</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <!-- Subjects Table -->
+    <div class="card p-3">
+        <h4>Existing Subjects</h4>
+        <table class="table table-dark table-striped">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Weekly Lectures</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for sub in subjects %}
+                <tr>
+                    <td>{{ sub.id }}</td>
+                    <td>{{ sub.name }}</td>
+                    <td>{{ sub.weekly_lectures }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+</body>
+</html>

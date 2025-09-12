@@ -1,39 +1,198 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Manage Timetable</title>
-<link rel="stylesheet" href="/static/css/style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - Timetable Management</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-<h1>Manage Timetable</h1>
-<div style="text-align:center;">
-    <button onclick="seedData()">Seed Sample Data</button>
-    <button onclick="generateTT()">Generate Timetable</button>
-    <button onclick="exportPDF()">Export PDF</button>
-</div>
-<div id="timetable-container"></div>
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="text-white">Admin Panel</h1>
+        <a href="{{ url_for('index') }}" class="btn btn-secondary">View Timetables</a>
+    </div>
 
-<!-- Modal -->
-<div id="editModal" class="modal">
-  <div class="modal-content">
-    <span class="close" onclick="closeModal()">&times;</span>
-    <h2>Edit Slot</h2>
-    <form id="editForm">
-      <input type="hidden" id="slot_id">
-      <label>Teacher:</label>
-      <select id="teacher_id"></select><br><br>
-      <label>Subject:</label>
-      <select id="subject_id"></select><br><br>
-      <label>Classroom:</label>
-      <select id="classroom_id"></select><br><br>
-      <button type="submit">Save</button>
-    </form>
-  </div>
+    <div class="row">
+        <div class="col-md-6 mb-4">
+            <div class="card p-3 h-100">
+                <h2 class="card-title">Add Teacher</h2>
+                <form id="addTeacherForm">
+                    <div class="mb-3">
+                        <input type="text" id="teacherName" class="form-control" placeholder="Teacher Name" required>
+                    </div>
+                    <div class="mb-3">
+                        <select id="teacherPref" class="form-control">
+                            <option value="">No Preference</option>
+                            <option value="morning">Morning Lectures (9 AM - 12 PM)</option>
+                            <option value="afternoon">Afternoon Lectures (12:30 PM Onwards)</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Add Teacher</button>
+                </form>
+                <h3 class="mt-4">Existing Teachers</h3>
+                <div class="table-responsive">
+                    <table class="table table-dark table-striped">
+                        <thead><tr><th>ID</th><th>Name</th><th>Preference</th><th>Action</th></tr></thead>
+                        <tbody>
+                            {% for teacher in teachers %}
+                            <tr>
+                                <td>{{ teacher.teacher_id }}</td>
+                                <td>{{ teacher.name }}</td>
+                                <td>N/A</td> <td><button onclick="deleteEntity('teachers', {{ teacher.teacher_id }})" class="btn btn-danger btn-sm">Delete</button></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6 mb-4">
+            <div class="card p-3 h-100">
+                <h2 class="card-title">Add Subject</h2>
+                <form id="addSubjectForm">
+                    <div class="mb-3">
+                        <input type="text" id="subjectName" class="form-control" placeholder="Subject Name" required>
+                    </div>
+                    <div class="mb-3">
+                        <input type="text" id="subjectCode" class="form-control" placeholder="Subject Code (e.g., CS101)" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Add Subject</button>
+                </form>
+                <h3 class="mt-4">Existing Subjects</h3>
+                <div class="table-responsive">
+                    <table class="table table-dark table-striped">
+                        <thead><tr><th>ID</th><th>Name</th><th>Code</th><th>Action</th></tr></thead>
+                        <tbody>
+                            {% for subject in subjects %}
+                            <tr>
+                                <td>{{ subject.subject_id }}</td>
+                                <td>{{ subject.name }}</td>
+                                <td>{{ subject.code }}</td>
+                                <td><button onclick="deleteEntity('subjects', {{ subject.subject_id }})" class="btn btn-danger btn-sm">Delete</button></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6 mb-4">
+            <div class="card p-3 h-100">
+                <h2 class="card-title">Add Class & Classroom</h2>
+                <div class="row">
+                    <div class="col-md-6">
+                        <h4>Add Class</h4>
+                        <form id="addClassForm">
+                            <input type="text" id="className" class="form-control" placeholder="Class Name (e.g., TE-B1)" required>
+                            <button type="submit" class="btn btn-primary mt-2">Add Class</button>
+                        </form>
+                        <h5 class="mt-3">Existing Classes</h5>
+                        <div class="table-responsive">
+                            <table class="table table-dark table-sm">
+                                <thead><tr><th>ID</th><th>Name</th><th>Action</th></tr></thead>
+                                <tbody>
+                                    {% for class_obj in classes %}
+                                    <tr>
+                                        <td>{{ class_obj.class_id }}</td>
+                                        <td>{{ class_obj.name }}</td>
+                                        <td><button onclick="deleteEntity('classes', {{ class_obj.class_id }})" class="btn btn-danger btn-sm">Del</button></td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <h4>Add Classroom</h4>
+                        <form id="addClassroomForm">
+                            <input type="text" id="classroomName" class="form-control" placeholder="Room Name (e.g., LAB-1)" required>
+                            <select id="isLab" class="form-control mt-2">
+                                <option value="0">Theory Room</option>
+                                <option value="1">Lab Room</option>
+                            </select>
+                            <button type="submit" class="btn btn-primary mt-2">Add Classroom</button>
+                        </form>
+                        <h5 class="mt-3">Existing Classrooms</h5>
+                        <div class="table-responsive">
+                            <table class="table table-dark table-sm">
+                                <thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Action</th></tr></thead>
+                                <tbody>
+                                    {% for room in classrooms %}
+                                    <tr>
+                                        <td>{{ room.classroom_id }}</td>
+                                        <td>{{ room.name }}</td>
+                                        <td>{{ 'Lab' if room.is_lab else 'Theory' }}</td>
+                                        <td><button onclick="deleteEntity('classrooms', {{ room.classroom_id }})" class="btn btn-danger btn-sm">Del</button></td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6 mb-4">
+            <div class="card p-3 h-100">
+                <h2 class="card-title">Assign Course</h2>
+                <form id="addCourseForm">
+                    <div class="mb-3">
+                        <select id="courseClass" class="form-control" required>
+                            <option value="">Select Class</option>
+                            {% for class_obj in classes %}<option value="{{ class_obj.class_id }}">{{ class_obj.name }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <select id="courseSubject" class="form-control" required>
+                            <option value="">Select Subject</option>
+                            {% for subject in subjects %}<option value="{{ subject.subject_id }}">{{ subject.name }} ({{ subject.code }})</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <select id="courseTeacher" class="form-control" required>
+                            <option value="">Select Teacher</option>
+                            {% for teacher in teachers %}<option value="{{ teacher.teacher_id }}">{{ teacher.name }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <input type="number" id="weeklyLectures" class="form-control" placeholder="Weekly Lectures" min="1" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-check-label text-white">Is Lab?</label>
+                        <input type="checkbox" id="isLabCheckbox" class="form-check-input ms-2">
+                    </div>
+                    <button type="submit" class="btn btn-primary">Add Course</button>
+                </form>
+                <h3 class="mt-4">Existing Course Assignments</h3>
+                <div class="table-responsive">
+                    <table class="table table-dark table-striped">
+                        <thead><tr><th>Class</th><th>Subject</th><th>Teacher</th><th>Lectures</th><th>Type</th><th>Action</th></tr></thead>
+                        <tbody>
+                            {% for course in courses %}
+                            <tr>
+                                <td>{{ course.class_name }}</td>
+                                <td>{{ course.subject_name }}</td>
+                                <td>{{ course.teacher_name }}</td>
+                                <td>{{ course.weekly_lectures }}</td>
+                                <td>{{ 'Lab' if course.is_lab else 'Theory' }}</td>
+                                <td><button onclick="deleteEntity('courses', {{ course.course_id }})" class="btn btn-danger btn-sm">Delete</button></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
-<script src="/static/js/timetable.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="{{ url_for('static', filename='js/manage.js') }}"></script>
 </body>
 </html>
