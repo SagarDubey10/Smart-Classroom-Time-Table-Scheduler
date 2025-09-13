@@ -1,3 +1,4 @@
+# app.py
 from flask import Flask, render_template, request, jsonify, g, redirect, url_for, send_file
 import sqlite3
 from datetime import datetime, timedelta
@@ -8,6 +9,9 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 import io
 
+# Import the blueprint from the new file
+from admin_routes import admin_bp
+
 app = Flask(__name__)
 DB_PATH = 'timetable.db'
 DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
@@ -15,6 +19,9 @@ SLOT_TIMES = [
     ('09:00', '10:00'), ('10:00', '11:00'), ('11:00', '12:00'),
     ('12:30', '13:30'), ('13:30', '14:30'), ('14:30', '15:30'), ('15:30', '16:30')
 ]
+
+# Register the blueprint
+app.register_blueprint(admin_bp)
 
 # --- DATABASE HELPERS ---
 def get_db():
@@ -404,63 +411,33 @@ def api_update():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
-@app.route('/api/admin/add_teacher', methods=['POST'])
-def add_teacher():
-    data = request.json
-    db = get_db()
-    db.execute('INSERT INTO teachers (name) VALUES (?)', (data['name'],))
-    if 'preference' in data and data['preference']:
-        db.execute('INSERT INTO teacher_preferences (teacher_id, preference) VALUES ((SELECT teacher_id FROM teachers WHERE name = ?), ?)', (data['name'], data['preference']))
-    db.commit()
-    return jsonify({'status': 'success'})
-
-@app.route('/api/admin/add_subject', methods=['POST'])
-def add_subject():
-    data = request.json
-    db = get_db()
-    db.execute('INSERT INTO subjects (name, code) VALUES (?, ?)', (data['name'], data['code']))
-    db.commit()
-    return jsonify({'status': 'success'})
-
-@app.route('/api/admin/add_class', methods=['POST'])
-def add_class():
-    data = request.json
-    db = get_db()
-    db.execute('INSERT INTO classes (name) VALUES (?)', (data['name'],))
-    db.commit()
-    return jsonify({'status': 'success'})
-
-@app.route('/api/admin/add_classroom', methods=['POST'])
-def add_classroom():
-    data = request.json
-    db = get_db()
-    db.execute('INSERT INTO classrooms (name, is_lab) VALUES (?, ?)', (data['name'], data['is_lab']))
-    db.commit()
-    return jsonify({'status': 'success'})
-
-@app.route('/api/admin/add_course', methods=['POST'])
-def add_course():
-    data = request.json
-    db = get_db()
-    try:
-        db.execute('INSERT INTO courses (class_id, subject_id, teacher_id, weekly_lectures, is_lab) VALUES (?, ?, ?, ?, ?)',
-                   (data['class_id'], data['subject_id'], data['teacher_id'], data['weekly_lectures'], data['is_lab']))
-        db.commit()
-        return jsonify({'status': 'success'})
-    except sqlite3.IntegrityError:
-        return jsonify({'status': 'error', 'message': 'Assignment already exists or invalid data.'}), 400
-
+# --- Admin Panel Delete Route ---
 @app.route('/api/admin/delete/<entity>/<id>', methods=['DELETE'])
 def delete_entity(entity, id):
     db = get_db()
-    try:
-        if entity in ['teachers', 'subjects', 'classes', 'classrooms', 'courses']:
-            db.execute(f'DELETE FROM {entity} WHERE {entity}_id = ?', (id,))
-            db.commit()
-            return jsonify({'status': 'success'})
+    # Use a dictionary to map plural entity names to singular column IDs
+    id_map = {
+        'teachers': 'teacher_id',
+        'subjects': 'subject_id',
+        'classes': 'class_id',
+        'classrooms': 'classroom_id',
+        'courses': 'course_id'
+    }
+
+    if entity not in id_map:
         return jsonify({'status': 'error', 'message': 'Invalid entity'}), 400
+    
+    column_id = id_map[entity]
+
+    try:
+        db.execute(f'DELETE FROM {entity} WHERE {column_id} = ?', (id,))
+        db.commit()
+        return jsonify({'status': 'success', 'message': f'{entity.capitalize()} deleted successfully.'})
     except sqlite3.IntegrityError:
-        return jsonify({'status': 'error', 'message': 'Cannot delete, it is in use.'}), 400
+        return jsonify({'status': 'error', 'message': 'Cannot delete, it is in use by another table.'}), 400
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 
 @app.route('/download/pdf/<class_name>')
 def download_pdf(class_name):
