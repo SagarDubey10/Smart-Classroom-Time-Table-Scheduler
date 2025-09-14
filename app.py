@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, g, redirect, url_for, send_file
+from flask import Flask, render_template, request, jsonify, g, redirect, url_for
 import sqlite3
 from datetime import datetime, timedelta
 import random
@@ -320,22 +320,100 @@ def manage():
     cur = db.cursor()
 
     if request.method == 'POST':
-        start_times = request.form.getlist('start_time')
-        end_times = request.form.getlist('end_time')
-        is_breaks = request.form.getlist('is_break')
-        break_names = request.form.getlist('break_name')
+        # Check which form was submitted using a hidden input field
+        form_name = request.form.get('form_name')
+        if form_name == 'add_teacher_form':
+            name = request.form['teacher_name']
+            preference = request.form['teacher_pref']
+            try:
+                db.execute('INSERT INTO teachers (name) VALUES (?)', (name,))
+                if preference:
+                    db.execute('INSERT OR IGNORE INTO teacher_preferences (teacher_id, preference) VALUES ((SELECT teacher_id FROM teachers WHERE name = ?), ?)', (name, preference))
+                db.commit()
+            except sqlite3.IntegrityError:
+                pass # Teacher already exists
+            return redirect(url_for('manage'))
         
-        slots_data = []
-        for i in range(len(start_times)):
-            is_break_val = int(is_breaks[i])
-            break_name_val = break_names[i] if break_names[i] else None
-            slots_data.append((i + 1, is_break_val, start_times[i], end_times[i], break_name_val))
+        elif form_name == 'add_subject_form':
+            name = request.form['subject_name']
+            code = request.form['subject_code']
+            try:
+                db.execute('INSERT INTO subjects (name, code) VALUES (?, ?)', (name, code))
+                db.commit()
+            except sqlite3.IntegrityError:
+                pass # Subject already exists
+            return redirect(url_for('manage'))
 
-        cur.execute('DELETE FROM schedule_config')
-        cur.executemany('INSERT INTO schedule_config (config_id, is_break, start_time, end_time, break_name) VALUES (?, ?, ?, ?, ?)', slots_data)
-        db.commit()
-        
-        return redirect(url_for('manage'))
+        elif form_name == 'add_class_form':
+            name = request.form['class_name']
+            try:
+                db.execute('INSERT INTO classes (name) VALUES (?)', (name,))
+                db.commit()
+            except sqlite3.IntegrityError:
+                pass # Class already exists
+            return redirect(url_for('manage'))
+
+        elif form_name == 'add_classroom_form':
+            name = request.form['classroom_name']
+            is_lab = int(request.form['is_lab'])
+            try:
+                db.execute('INSERT INTO classrooms (name, is_lab) VALUES (?, ?)', (name, is_lab))
+                db.commit()
+            except sqlite3.IntegrityError:
+                pass # Classroom already exists
+            return redirect(url_for('manage'))
+
+        elif form_name == 'add_course_form':
+            class_id = request.form['course_class']
+            subject_id = request.form['course_subject']
+            teacher_id = request.form['course_teacher']
+            weekly_lectures = request.form['weekly_lectures']
+            is_lab = int(request.form.get('is_lab_checkbox') == 'on')
+            try:
+                db.execute('INSERT INTO courses (class_id, subject_id, teacher_id, weekly_lectures, is_lab) VALUES (?, ?, ?, ?, ?)',
+                           (class_id, subject_id, teacher_id, weekly_lectures, is_lab))
+                db.commit()
+            except sqlite3.IntegrityError:
+                pass
+            return redirect(url_for('manage'))
+
+        elif form_name == 'schedule_config_form':
+            start_times = request.form.getlist('start_time')
+            end_times = request.form.getlist('end_time')
+            is_breaks = request.form.getlist('is_break')
+            break_names = request.form.getlist('break_name')
+            
+            slots_data = []
+            for i in range(len(start_times)):
+                is_break_val = int(is_breaks[i])
+                break_name_val = break_names[i] if break_names[i] else None
+                slots_data.append((i + 1, is_break_val, start_times[i], end_times[i], break_name_val))
+            
+            cur.execute('DELETE FROM schedule_config')
+            cur.executemany('INSERT INTO schedule_config (config_id, is_break, start_time, end_time, break_name) VALUES (?, ?, ?, ?, ?)', slots_data)
+            db.commit()
+            
+            return redirect(url_for('manage'))
+
+        elif form_name.startswith('delete_'):
+            entity = form_name.replace('delete_', '').replace('_form', '')
+            id_map = {
+                'teacher': 'teacher_id',
+                'subject': 'subject_id',
+                'class': 'class_id',
+                'classroom': 'classroom_id',
+                'course': 'course_id'
+            }
+            column_id = id_map.get(entity)
+            if column_id:
+                try:
+                    record_id = request.form[f'{entity}_id']
+                    db.execute(f'DELETE FROM {entity}s WHERE {column_id} = ?', (record_id,)) # Note the 's' in the table name
+                    db.commit()
+                except (sqlite3.IntegrityError, KeyError):
+                    pass
+            return redirect(url_for('manage'))
+
 
     teachers = cur.execute('SELECT * FROM teachers').fetchall()
     subjects = cur.execute('SELECT * FROM subjects').fetchall()
@@ -417,179 +495,6 @@ def api_get_timetable(class_name):
         'slots_full': [dict(s) for s in SLOTS],
         'options': {'teachers': teachers, 'subjects': subjects, 'classrooms': classrooms, 'courses': courses, 'classes': classes}
     })
-
-@app.route('/api/timetable/update', methods=['POST'])
-def api_update():
-    data = request.json
-    slot_id = data.get('slot_id')
-    
-    if not data['teacher_id'] and not data['subject_id'] and not data['classroom_id']:
-        if slot_id:
-            db = get_db()
-            db.execute('DELETE FROM timetable_slots WHERE slot_id = ?', (slot_id,))
-            db.commit()
-            return jsonify({'status': 'success', 'message': 'Slot cleared successfully.'})
-        return jsonify({'status': 'error', 'message': 'Invalid update request.'}), 400
-
-    db = get_db()
-    cur = db.cursor()
-    
-    cur.execute('SELECT course_id, is_lab FROM courses WHERE subject_id = ? AND teacher_id = ? AND class_id = ?', 
-                (data['subject_id'], data['teacher_id'], data['class_id']))
-    course = cur.fetchone()
-
-    if not course:
-        return jsonify({'status': 'error', 'message': 'This teacher is not assigned to teach this subject for this class.'}), 400
-
-    course_id = course['course_id']
-    
-    valid, message = validate_change(
-        slot_id, 
-        data['day'], 
-        data['time_start'], 
-        data['time_end'], 
-        data['teacher_id'], 
-        data['classroom_id'],
-        data['class_id']
-    )
-
-    if not valid:
-        return jsonify({'status': 'error', 'message': message}), 400
-
-    try:
-        if slot_id:
-            cur.execute('''
-                UPDATE timetable_slots 
-                SET day = ?, time_start = ?, time_end = ?, teacher_id = ?, classroom_id = ?, course_id = ?
-                WHERE slot_id = ?
-            ''', (data['day'], data['time_start'], data['time_end'], data['teacher_id'], data['classroom_id'], course_id, slot_id))
-        else:
-            cur.execute('''
-                INSERT INTO timetable_slots (class_id, day, time_start, time_end, teacher_id, classroom_id, course_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (data['class_id'], data['day'], data['time_start'], data['time_end'], data['teacher_id'], data['classroom_id'], course_id))
-        db.commit()
-        return jsonify({'status': 'success', 'message': 'Timetable updated successfully.'})
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-@app.route('/api/admin/schedule_config', methods=['GET', 'POST'])
-def api_update_schedule_config():
-    db = get_db()
-    cur = db.cursor()
-    if request.method == 'POST':
-        data = request.json
-        cur.execute('DELETE FROM schedule_config')
-        
-        config = [(i + 1, slot['is_break'], slot['start'], slot['end'], slot.get('name')) for i, slot in enumerate(data['slots'])]
-        cur.executemany('INSERT INTO schedule_config (config_id, is_break, start_time, end_time, break_name) VALUES (?, ?, ?, ?, ?)', config)
-        db.commit()
-        
-        schedule_config = [dict(row) for row in cur.execute('SELECT * FROM schedule_config ORDER BY config_id').fetchall()]
-        return jsonify({'status': 'success', 'message': 'Schedule configuration updated!', 'config': schedule_config})
-    else:
-        schedule_config = [dict(row) for row in cur.execute('SELECT * FROM schedule_config ORDER BY config_id').fetchall()]
-        return jsonify({'status': 'success', 'config': schedule_config})
-
-
-# --- Admin Panel Delete Route ---
-@app.route('/api/admin/delete/<entity>/<id>', methods=['DELETE'])
-def delete_entity(entity, id):
-    db = get_db()
-    id_map = {
-        'teachers': 'teacher_id',
-        'subjects': 'subject_id',
-        'classes': 'class_id',
-        'classrooms': 'classroom_id',
-        'courses': 'course_id'
-    }
-
-    if entity not in id_map:
-        return jsonify({'status': 'error', 'message': 'Invalid entity'}), 400
-    
-    column_id = id_map[entity]
-
-    try:
-        db.execute(f'DELETE FROM {entity} WHERE {column_id} = ?', (id,))
-        db.commit()
-        return jsonify({'status': 'success', 'message': f'{entity.capitalize()} deleted successfully.'})
-    except sqlite3.IntegrityError:
-        return jsonify({'status': 'error', 'message': 'Cannot delete, it is in use by another table.'}), 400
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-@app.route('/download/pdf/<class_name>')
-def download_pdf(class_name):
-    db = get_db()
-    cur = db.cursor()
-    cur.execute('SELECT class_id FROM classes WHERE name = ?', (class_name,))
-    class_id = cur.fetchone()['class_id']
-    SLOTS = get_slot_times()
-    
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4))
-    styles = getSampleStyleSheet()
-    story = []
-    title_style = styles['Title']
-    story.append(Paragraph(f"Timetable for {class_name}", title_style))
-    story.append(Spacer(1, 0.2 * 10))
-
-    timetable_data_pdf = [['Time'] + DAYS]
-    
-    for slot in SLOTS:
-        row_data = [f"{slot['start_time']} - {slot['end_time']}"]
-
-        if slot['is_break']:
-            row_data.append(slot['break_name'])
-        else:
-            for day in DAYS:
-                cur.execute('''
-                    SELECT s.name as subject_name, t.name as teacher_name, c.name as classroom_name
-                    FROM timetable_slots ts
-                    JOIN courses co ON ts.course_id = co.course_id
-                    JOIN subjects s ON co.subject_id = s.subject_id
-                    JOIN teachers t ON ts.teacher_id = t.teacher_id
-                    JOIN classrooms c ON ts.classroom_id = c.classroom_id
-                    WHERE ts.class_id = ? AND ts.day = ? AND ts.time_start = ?
-                ''', (class_id, day, slot['start_time']))
-                result = cur.fetchone()
-                if result:
-                    row_data.append(f"{result['subject_name']}\n({result['teacher_name']})\n@{result['classroom_name']}")
-                else:
-                    row_data.append('')
-        
-        timetable_data_pdf.append(row_data)
-
-    table_width = A4[0] - doc.leftMargin - doc.rightMargin
-    time_col_width = 1.2 * 72
-    day_col_width = (table_width - time_col_width) / len(DAYS)
-    col_widths = [time_col_width] + [day_col_width] * len(DAYS)
-    
-    table_style = TableStyle([
-        ('GRID', (0, 0), (-1, -1), 1, colors.black),
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2a2a3d')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('FONTSIZE', (0, 0), (-1, -1), 8),
-        ('WORDWRAP', (0, 0), (-1, -1), 1)
-    ])
-
-    row_index = 0
-    for slot in SLOTS:
-        if slot['is_break']:
-            table_style.add('SPAN', (1, row_index + 1), (len(DAYS), row_index + 1))
-            table_style.add('BACKGROUND', (1, row_index + 1), (len(DAYS), row_index + 1), colors.HexColor('#5c6c7c'))
-        row_index += 1
-
-    timetable_table = Table(timetable_data_pdf, colWidths=col_widths)
-    timetable_table.setStyle(table_style)
-    story.append(timetable_table)
-    
-    doc.build(story)
-    buffer.seek(0)
-    return send_file(buffer, as_attachment=True, download_name=f'timetable_{class_name}.pdf', mimetype='application/pdf')
 
 if __name__ == '__main__':
     with app.app_context():

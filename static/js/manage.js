@@ -1,177 +1,106 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // Event listeners for forms
-    document.getElementById('addTeacherForm').addEventListener('submit', handleAddTeacher);
-    document.getElementById('addSubjectForm').addEventListener('submit', handleAddSubject);
-    document.getElementById('addClassForm').addEventListener('submit', handleAddClass);
-    document.getElementById('addClassroomForm').addEventListener('submit', handleAddClassroom);
-    document.getElementById('addCourseForm').addEventListener('submit', handleAddCourse);
-
-    // Schedule Config form event listeners
+    // Event listeners for form submissions on the schedule configuration form
     const scheduleConfigForm = document.getElementById('scheduleConfigForm');
-    const slotInputsContainer = document.getElementById('slotInputs');
     const addSlotBtn = document.getElementById('addSlotBtn');
 
-    addSlotBtn.addEventListener('click', () => addSlotInput());
-    scheduleConfigForm.addEventListener('submit', handleScheduleConfig);
+    // Add slot button listener
+    if (addSlotBtn) {
+        addSlotBtn.addEventListener('click', addSlotInput);
+    }
 
-    fetchScheduleConfig();
+    // Set up the listeners for initial slots
+    linkNewSlotToPrevious();
+
+    // Helper function to handle time auto-population
+    function handleTimeChange(event) {
+        const currentInputGroup = event.target.closest('.input-group');
+        const nextInputGroup = currentInputGroup.nextElementSibling;
+        if (nextInputGroup) {
+            const nextStartTimeInput = nextInputGroup.querySelector('.start-time-input');
+            if (nextStartTimeInput) {
+                nextStartTimeInput.value = event.target.value;
+            }
+        }
+    }
+
+    // Function to add a new time slot row
+    function addSlotInput(slot = { start_time: '', end_time: '', is_break: 0, break_name: '' }) {
+        const slotInputsContainer = document.getElementById('slotInputs');
+        const div = document.createElement('div');
+        div.className = 'input-group mb-2';
+
+        const start24h = convert12to24(slot.start_time);
+        const end24h = convert12to24(slot.end_time);
+
+        div.innerHTML = `
+            <input type="time" class="form-control start-time-input" value="${start24h || ''}" name="start_time" required>
+            <input type="time" class="form-control end-time-input" value="${end24h || ''}" name="end_time" required>
+            <select class="form-control" name="is_break">
+                <option value="0" ${!slot.is_break ? 'selected' : ''}>Lecture</option>
+                <option value="1" ${slot.is_break ? 'selected' : ''}>Break</option>
+            </select>
+            <input type="text" class="form-control break-name-input" placeholder="Break Name (optional)" value="${slot.break_name || ''}" ${!slot.is_break ? 'disabled' : ''} name="break_name">
+            <button type="button" class="btn btn-danger remove-slot">X</button>
+        `;
+
+        div.querySelector('.remove-slot').onclick = () => {
+            div.remove();
+            linkNewSlotToPrevious();
+        };
+
+        div.querySelector('select[name="is_break"]').onchange = (e) => {
+            const breakNameInput = div.querySelector('input[name="break_name"]');
+            breakNameInput.disabled = e.target.value === '0';
+            if (e.target.value === '0') breakNameInput.value = '';
+        };
+
+        slotInputsContainer.appendChild(div);
+        linkNewSlotToPrevious();
+    }
+
+    // The link functionality is now a separate function for better organization
+    function linkNewSlotToPrevious() {
+        const slotInputs = document.querySelectorAll('#slotInputs .input-group');
+        if (slotInputs.length > 1) {
+            const lastSlot = slotInputs[slotInputs.length - 2];
+            const newSlot = slotInputs[slotInputs.length - 1];
+
+            const lastEndTimeInput = lastSlot.querySelector('.end-time-input');
+            const newStartTimeInput = newSlot.querySelector('.start-time-input');
+
+            if (lastEndTimeInput && newStartTimeInput) {
+                lastEndTimeInput.removeEventListener('change', handleTimeChange);
+                lastEndTimeInput.addEventListener('change', (e) => {
+                    newStartTimeInput.value = e.target.value;
+                });
+            }
+        }
+    }
+
+    // Helper functions for time conversion
+    function convert12to24(time12) {
+        if (!time12) return '';
+        const [time, ampm] = time12.split(' ');
+        if (!ampm) return time;
+        let [hours, minutes] = time.split(':');
+        if (ampm.toUpperCase() === 'PM' && hours !== '12') {
+            hours = parseInt(hours) + 12;
+        }
+        if (ampm.toUpperCase() === 'AM' && hours === '12') {
+            hours = '00';
+        }
+        return `${hours}:${minutes}`;
+    }
+
+    function formatTimeFromInput(time24) {
+        if (!time24) return '';
+        const [hours, minutes] = time24.split(':');
+        let h = parseInt(hours);
+        let ampm = h >= 12 ? 'PM' : 'AM';
+        h = h % 12;
+        h = h ? h : 12;
+        let m = minutes.padStart(2, '0');
+        return `${h}:${m} ${ampm}`;
+    }
+
 });
-
-async function fetchScheduleConfig() {
-    const res = await fetch('/api/admin/schedule_config');
-    const data = await res.json();
-    if (data.status === 'success' && data.config.length > 0) {
-        renderScheduleConfigForm(data.config);
-    } else {
-        addSlotInput();
-    }
-}
-
-function renderScheduleConfigForm(config) {
-    const slotInputsContainer = document.getElementById('slotInputs');
-    slotInputsContainer.innerHTML = '';
-
-    config.forEach(slot => {
-        addSlotInput(slot);
-    });
-}
-
-function addSlotInput(slot = { start_time: '', end_time: '', is_break: 0, break_name: '' }) {
-    const slotInputsContainer = document.getElementById('slotInputs');
-    const div = document.createElement('div');
-    div.className = 'input-group mb-2';
-    // Use type="time" for native browser time picker
-    div.innerHTML = `
-        <input type="time" class="form-control" placeholder="Start Time" value="${slot.start_time || ''}" required>
-        <input type="time" class="form-control" placeholder="End Time" value="${slot.end_time || ''}" required>
-        <select class="form-control is-break-select">
-            <option value="0" ${!slot.is_break ? 'selected' : ''}>Lecture</option>
-            <option value="1" ${slot.is_break ? 'selected' : ''}>Break</option>
-        </select>
-        <input type="text" class="form-control break-name-input" placeholder="Break Name (optional)" value="${slot.break_name || ''}" ${!slot.is_break ? 'disabled' : ''}>
-        <button type="button" class="btn btn-danger remove-slot">X</button>
-    `;
-    div.querySelector('.remove-slot').onclick = () => div.remove();
-    div.querySelector('.is-break-select').onchange = (e) => {
-        const breakNameInput = div.querySelector('.break-name-input');
-        breakNameInput.disabled = e.target.value === '0';
-        if (e.target.value === '0') breakNameInput.value = '';
-    };
-    slotInputsContainer.appendChild(div);
-}
-
-// Function to convert HH:MM to HH:MM AM/PM
-function formatTimeFromInput(time24) {
-    if (!time24) return '';
-    const [hours, minutes] = time24.split(':');
-    let h = parseInt(hours);
-    let ampm = h >= 12 ? 'PM' : 'AM';
-    h = h % 12;
-    h = h ? h : 12; // the hour '0' should be '12'
-    let m = minutes < 10 ? '0' + minutes : minutes;
-    return `${h}:${m} ${ampm}`;
-}
-
-
-async function handleScheduleConfig(event) {
-    event.preventDefault();
-    const slotInputs = document.querySelectorAll('#slotInputs .input-group');
-    const slots = [];
-    slotInputs.forEach(group => {
-        const inputs = group.querySelectorAll('input, select');
-        const isBreak = inputs[2].value === '1';
-        slots.push({
-            start: formatTimeFromInput(inputs[0].value),
-            end: formatTimeFromInput(inputs[1].value),
-            is_break: isBreak,
-            name: isBreak ? inputs[3].value : null
-        });
-    });
-
-    const payload = {
-        slots: slots
-    };
-
-    const res = await postData('/api/admin/schedule_config', payload);
-    if (res.status === 'success') {
-        alert(res.message);
-        window.location.reload();
-    } else {
-        alert('Error: ' + res.message);
-    }
-}
-
-async function handleAddTeacher(event) {
-    event.preventDefault();
-    const name = document.getElementById('teacherName').value;
-    const preference = document.getElementById('teacherPref').value;
-    await postData('/api/admin/add_teacher', { name, preference });
-    window.location.reload();
-}
-
-async function handleAddSubject(event) {
-    event.preventDefault();
-    const name = document.getElementById('subjectName').value;
-    const code = document.getElementById('subjectCode').value;
-    await postData('/api/admin/add_subject', { name, code });
-    window.location.reload();
-}
-
-async function handleAddClass(event) {
-    event.preventDefault();
-    const name = document.getElementById('className').value;
-    await postData('/api/admin/add_class', { name });
-    window.location.reload();
-}
-
-async function handleAddClassroom(event) {
-    event.preventDefault();
-    const name = document.getElementById('classroomName').value;
-    const isLab = document.getElementById('isLab').value;
-    await postData('/api/admin/add_classroom', { name, is_lab: isLab });
-    window.location.reload();
-}
-
-async function handleAddCourse(event) {
-    event.preventDefault();
-    const class_id = document.getElementById('courseClass').value;
-    const subject_id = document.getElementById('courseSubject').value;
-    const teacher_id = document.getElementById('courseTeacher').value;
-    const weekly_lectures = document.getElementById('weeklyLectures').value;
-    const is_lab = document.getElementById('isLabCheckbox').checked ? 1 : 0;
-
-    const res = await postData('/api/admin/add_course', {
-        class_id,
-        subject_id,
-        teacher_id,
-        weekly_lectures,
-        is_lab
-    });
-
-    if (res.status === 'success') {
-        alert('Course assignment added successfully!');
-        window.location.reload();
-    } else {
-        alert('Error: ' + res.message);
-    }
-}
-
-async function deleteEntity(entity, id) {
-    if (confirm(`Are you sure you want to delete this ${entity} and all its related data?`)) {
-        const res = await fetch(`/api/admin/delete/${entity}/${id}`, { method: 'DELETE' });
-        const data = await res.json();
-        alert(data.message);
-        window.location.reload();
-    }
-}
-
-async function postData(url, data) {
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-    });
-    return response.json();
-}
