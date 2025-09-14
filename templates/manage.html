@@ -17,17 +17,17 @@
     <div class="card p-3 mb-4">
         <h2 class="card-title">Schedule Configuration</h2>
         <p class="text-white">Define the time slots for lectures and breaks. The timetable will be generated based on this configuration.</p>
-        <form id="scheduleConfigForm">
+        <form id="scheduleConfigForm" action="{{ url_for('manage') }}" method="post">
             <div id="slotInputs">
                 {% for slot in schedule_config %}
                     <div class="input-group mb-2">
-                        <input type="time" class="form-control" placeholder="Start Time" value="{{ slot.start_time }}" required>
-                        <input type="time" class="form-control" placeholder="End Time" value="{{ slot.end_time }}" required>
-                        <select class="form-control is-break-select">
+                        <input type="time" class="form-control" name="start_time" value="{{ slot.start_time }}" required>
+                        <input type="time" class="form-control" name="end_time" value="{{ slot.end_time }}" required>
+                        <select class="form-control" name="is_break">
                             <option value="0" {% if not slot.is_break %}selected{% endif %}>Lecture</option>
                             <option value="1" {% if slot.is_break %}selected{% endif %}>Break</option>
                         </select>
-                        <input type="text" class="form-control break-name-input" placeholder="Break Name (optional)" value="{{ slot.break_name or '' }}" {% if not slot.is_break %}disabled{% endif %}>
+                        <input type="text" class="form-control" name="break_name" placeholder="Break Name (optional)" value="{{ slot.break_name or '' }}" {% if not slot.is_break %}disabled{% endif %}>
                         <button type="button" class="btn btn-danger remove-slot">X</button>
                     </div>
                 {% endfor %}

@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, jsonify, g, redirect, url_for
 import sqlite3
 from datetime import datetime, timedelta
 import random
-from reportlab.lib.pagesizes import letter
+from reportlab.lib.pagesizes import A4, landscape
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
@@ -11,6 +11,7 @@ import io
 app = Flask(__name__)
 DB_PATH = 'timetable.db'
 DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
+app.secret_key = 'your_secret_key_here'
 
 # --- DATABASE HELPERS ---
 def get_db():
@@ -101,8 +102,22 @@ def seed_sample_data():
         DELETE FROM classes;
         DELETE FROM teacher_preferences;
         DELETE FROM teachers;
-        DELETE FROM schedule_config;
     ''')
+    
+    cur.execute('SELECT COUNT(*) FROM schedule_config')
+    if cur.fetchone()[0] == 0:
+        config = [
+            (1, 0, '10:30 AM', '11:30 AM', None),
+            (2, 0, '11:30 AM', '12:30 PM', None),
+            (3, 0, '12:30 PM', '01:30 PM', None),
+            (4, 1, '01:30 PM', '02:15 PM', 'Lunch Break'),
+            (5, 0, '02:15 PM', '03:15 PM', None),
+            (6, 1, '03:15 PM', '03:30 PM', 'Short Break'),
+            (7, 0, '03:30 PM', '04:30 PM', None),
+            (8, 0, '04:30 PM', '05:30 PM', None)
+        ]
+        cur.executemany('INSERT INTO schedule_config (config_id, is_break, start_time, end_time, break_name) VALUES (?, ?, ?, ?, ?)', config)
+    
     teachers = [('Prof. Ghule',), ('Prof. Bhosle',), ('Prof. Pingle',), ('Dr. Deshmukh',), ('Ms. Shaikh',)]
     cur.executemany('INSERT INTO teachers (name) VALUES (?)', teachers)
     teacher_ids = {row['name']: row['teacher_id'] for row in cur.execute('SELECT teacher_id, name FROM teachers').fetchall()}
@@ -130,19 +145,6 @@ def seed_sample_data():
         (teacher_ids['Prof. Bhosle'], 'afternoon')
     ]
     cur.executemany('INSERT OR REPLACE INTO teacher_preferences (teacher_id, preference) VALUES (?, ?)', teacher_prefs)
-
-    # Seed initial schedule configuration
-    config = [
-        (1, 0, '10:30 AM', '11:30 AM', None),
-        (2, 0, '11:30 AM', '12:30 PM', None),
-        (3, 0, '12:30 PM', '01:30 PM', None),
-        (4, 1, '01:30 PM', '02:15 PM', 'Lunch Break'),
-        (5, 0, '02:15 PM', '03:15 PM', None),
-        (6, 1, '03:15 PM', '03:30 PM', 'Short Break'),
-        (7, 0, '03:30 PM', '04:30 PM', None),
-        (8, 0, '04:30 PM', '05:30 PM', None)
-    ]
-    cur.executemany('INSERT INTO schedule_config (config_id, is_break, start_time, end_time, break_name) VALUES (?, ?, ?, ?, ?)', config)
 
     db.commit()
 
@@ -312,10 +314,29 @@ def index():
     classes = [dict(row) for row in cur.fetchall()]
     return render_template('index.html', classes=classes)
 
-@app.route('/manage')
+@app.route('/manage', methods=['GET', 'POST'])
 def manage():
     db = get_db()
     cur = db.cursor()
+
+    if request.method == 'POST':
+        start_times = request.form.getlist('start_time')
+        end_times = request.form.getlist('end_time')
+        is_breaks = request.form.getlist('is_break')
+        break_names = request.form.getlist('break_name')
+        
+        slots_data = []
+        for i in range(len(start_times)):
+            is_break_val = int(is_breaks[i])
+            break_name_val = break_names[i] if break_names[i] else None
+            slots_data.append((i + 1, is_break_val, start_times[i], end_times[i], break_name_val))
+
+        cur.execute('DELETE FROM schedule_config')
+        cur.executemany('INSERT INTO schedule_config (config_id, is_break, start_time, end_time, break_name) VALUES (?, ?, ?, ?, ?)', slots_data)
+        db.commit()
+        
+        return redirect(url_for('manage'))
+
     teachers = cur.execute('SELECT * FROM teachers').fetchall()
     subjects = cur.execute('SELECT * FROM subjects').fetchall()
     classes = cur.execute('SELECT * FROM classes').fetchall()
@@ -328,6 +349,7 @@ def manage():
         JOIN classes cl ON c.class_id = cl.class_id
     ''').fetchall()
     schedule_config = get_slot_times()
+    
     return render_template('manage.html', teachers=teachers, subjects=subjects, classes=classes, classrooms=classrooms, courses=courses, schedule_config=schedule_config)
 
 @app.route('/api/timetable/generate', methods=['POST'])
@@ -353,8 +375,8 @@ def api_get_timetable(class_name):
         SELECT ts.*, t.name as teacher_name, s.name as subject_name, c.name as classroom_name, co.is_lab
         FROM timetable_slots ts
         JOIN courses co ON ts.course_id = co.course_id
-        JOIN teachers t ON ts.teacher_id = t.teacher_id
         JOIN subjects s ON co.subject_id = s.subject_id
+        JOIN teachers t ON ts.teacher_id = t.teacher_id
         JOIN classrooms c ON ts.classroom_id = c.classroom_id
         WHERE ts.class_id = ?
     '''
@@ -462,7 +484,9 @@ def api_update_schedule_config():
         config = [(i + 1, slot['is_break'], slot['start'], slot['end'], slot.get('name')) for i, slot in enumerate(data['slots'])]
         cur.executemany('INSERT INTO schedule_config (config_id, is_break, start_time, end_time, break_name) VALUES (?, ?, ?, ?, ?)', config)
         db.commit()
-        return jsonify({'status': 'success', 'message': 'Schedule configuration updated!'})
+        
+        schedule_config = [dict(row) for row in cur.execute('SELECT * FROM schedule_config ORDER BY config_id').fetchall()]
+        return jsonify({'status': 'success', 'message': 'Schedule configuration updated!', 'config': schedule_config})
     else:
         schedule_config = [dict(row) for row in cur.execute('SELECT * FROM schedule_config ORDER BY config_id').fetchall()]
         return jsonify({'status': 'success', 'config': schedule_config})
@@ -502,26 +526,22 @@ def download_pdf(class_name):
     class_id = cur.fetchone()['class_id']
     SLOTS = get_slot_times()
     
-    # PDF generation logic
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4))
     styles = getSampleStyleSheet()
     story = []
     title_style = styles['Title']
     story.append(Paragraph(f"Timetable for {class_name}", title_style))
     story.append(Spacer(1, 0.2 * 10))
 
-    # Prepare data for the PDF table, handling breaks as merged cells
     timetable_data_pdf = [['Time'] + DAYS]
     
     for slot in SLOTS:
+        row_data = [f"{slot['start_time']} - {slot['end_time']}"]
+
         if slot['is_break']:
-            # For a break, create a row with the time and a single cell spanning the entire width
-            row = [f"{slot['start_time']} - {slot['end_time']}", slot['break_name']]
-            timetable_data_pdf.append(row)
+            row_data.append(slot['break_name'])
         else:
-            # For a lecture slot, create a row with cells for each day
-            row = [f"{slot['start_time']} - {slot['end_time']}"]
             for day in DAYS:
                 cur.execute('''
                     SELECT s.name as subject_name, t.name as teacher_name, c.name as classroom_name
@@ -534,14 +554,17 @@ def download_pdf(class_name):
                 ''', (class_id, day, slot['start_time']))
                 result = cur.fetchone()
                 if result:
-                    row.append(f"{result['subject_name']}\n({result['teacher_name']})\n@{result['classroom_name']}")
+                    row_data.append(f"{result['subject_name']}\n({result['teacher_name']})\n@{result['classroom_name']}")
                 else:
-                    row.append('')
-            timetable_data_pdf.append(row)
+                    row_data.append('')
+        
+        timetable_data_pdf.append(row_data)
 
-    # Calculate column widths and styling for the PDF table
-    num_cols = len(DAYS) + 1
-    col_widths = [1.5*72] + [1.5*72] * len(DAYS)
+    table_width = A4[0] - doc.leftMargin - doc.rightMargin
+    time_col_width = 1.2 * 72
+    day_col_width = (table_width - time_col_width) / len(DAYS)
+    col_widths = [time_col_width] + [day_col_width] * len(DAYS)
+    
     table_style = TableStyle([
         ('GRID', (0, 0), (-1, -1), 1, colors.black),
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2a2a3d')),
@@ -550,14 +573,14 @@ def download_pdf(class_name):
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('WORDWRAP', (0, 0), (-1, -1), 1)
     ])
 
-    # Add SPAN commands for break rows
     row_index = 0
     for slot in SLOTS:
         if slot['is_break']:
-            table_style.add('SPAN', (1, row_index + 1), (num_cols - 1, row_index + 1))
-            table_style.add('BACKGROUND', (1, row_index + 1), (num_cols - 1, row_index + 1), colors.HexColor('#5c6c7c'))
+            table_style.add('SPAN', (1, row_index + 1), (len(DAYS), row_index + 1))
+            table_style.add('BACKGROUND', (1, row_index + 1), (len(DAYS), row_index + 1), colors.HexColor('#5c6c7c'))
         row_index += 1
 
     timetable_table = Table(timetable_data_pdf, colWidths=col_widths)

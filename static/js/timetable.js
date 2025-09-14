@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
   const generateBtn = document.getElementById('generateBtn');
   const classSelect = document.getElementById('classSelect');
-  const downloadPdfBtn = document.getElementById('downloadPdfBtn');
+  const printBtn = document.getElementById('printBtn');
 
   // Modal elements
   const editSlotModal = new bootstrap.Modal(document.getElementById('editSlotModal'));
@@ -37,13 +37,8 @@ document.addEventListener('DOMContentLoaded', () => {
     renderTimetable();
   });
 
-  downloadPdfBtn.addEventListener('click', () => {
-    const selectedClass = classSelect.value;
-    if (selectedClass) {
-      window.open(`/download/pdf/${selectedClass}`, '_blank');
-    } else {
-      alert('Please select a class to download.');
-    }
+  printBtn.addEventListener('click', () => {
+    window.print();
   });
 
   saveSlotBtn.addEventListener('click', async () => {
@@ -123,7 +118,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const classId = classSelect.options[classSelect.selectedIndex].dataset.id;
 
     let html = `
-            <h2 class="text-white mb-3">${selectedClass} Timetable</h2>
+            <h2 class="text-white mb-3">Timetable for ${selectedClass}</h2>
             <div class="table-responsive">
                 <table class="table table-dark table-striped table-bordered text-center timetable-table">
                     <thead>
@@ -209,7 +204,9 @@ document.addEventListener('DOMContentLoaded', () => {
         modalSlotId.value = slotId;
         modalClassId.value = classId;
         modalStartTime.value = time;
-        modalEndTime.value = data.slots_full.find(s => s.start_time === time).end_time;
+
+        const fullSlot = data.slots_full.find(s => s.start_time === time);
+        modalEndTime.value = fullSlot ? fullSlot.end_time : '';
 
         populateSelect(modalSubject, data.options.subjects, 'subject_id', 'name', subjectId);
         populateSelect(modalTeacher, data.options.teachers, 'teacher_id', 'name', teacherId);
