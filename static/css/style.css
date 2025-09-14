@@ -73,18 +73,44 @@ body {
 }
 
 /* Timetable-specific styling */
+.timetable-table {
+    table-layout: fixed;
+    width: 100%;
+}
+
+.timetable-table th,
+.timetable-table td {
+    padding: 8px;
+    vertical-align: middle;
+    text-align: center;
+    border: 1px solid #444;
+    word-wrap: break-word;
+    white-space: normal;
+    color: #fff;
+    background-color: #2a2a3d;
+}
+
 .theory-session {
     background-color: #4a6fa5;
-    color: white;
 }
 
 .lab-session {
     background-color: #5c6c7c;
-    color: white;
+}
+
+.break-slot {
+    background-color: #3a3a4d;
+    font-weight: bold;
+}
+
+.empty-slot {
+    background-color: #2a2a3d;
+    color: #fff;
 }
 
 td small {
     display: block;
+    color: #fff;
 }
 
 .table-bordered th,
@@ -102,20 +128,21 @@ td small {
         background-color: #fff;
         color: #000;
         font-size: 10pt;
-        /* Force printing of colors, important for backgrounds */
         -webkit-print-color-adjust: exact;
         color-adjust: exact;
     }
 
-    /* Hide all UI elements that are not part of the timetable */
     .d-flex.justify-content-between,
     .mb-4,
-    .btn {
+    .btn,
+    .form-label,
+    select {
         display: none !important;
     }
 
-    h1 {
-        color: #000 !important;
+    h1,
+    h2 {
+        display: block !important;
         text-align: center;
         margin-bottom: 20px;
     }
@@ -138,17 +165,23 @@ td small {
         border: 1px solid #000;
         padding: 5px;
         font-size: 8pt;
-        background-color: #fff !important;
     }
 
+    /* Override all background and text colors to be print-friendly */
     .timetable-table thead th {
         background-color: #e9ecef !important;
         color: #000 !important;
         font-weight: bold;
     }
 
-    .timetable-table tbody tr:nth-child(even) {
-        background-color: #f2f2f2 !important;
+    .timetable-table tbody tr {
+        background-color: #fff !important;
+        color: #000 !important;
+    }
+
+    .timetable-table td {
+        background-color: #fff !important;
+        color: #000 !important;
     }
 
     .break-slot {
@@ -157,17 +190,20 @@ td small {
         font-weight: bold;
     }
 
-    /* Hide the "Click to add" text in empty slots for printing */
+    /* Ensure the borders for empty cells are visible */
     .empty-slot {
         background-color: #fff !important;
+        border: 1px solid #000;
     }
 
     .empty-slot::before {
         content: '';
-        /* Remove the content */
     }
 
-    /* Print-specific media query for landscape orientation */
+    td small {
+        color: #000;
+    }
+
     @page {
         size: A4 landscape;
         margin: 1cm;
