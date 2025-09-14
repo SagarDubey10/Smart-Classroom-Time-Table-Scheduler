@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, g, redirect, url_for
+from flask import Flask, render_template, request, jsonify, g, redirect, url_for, flash, get_flashed_messages
 import sqlite3
 from datetime import datetime, timedelta
 import random
@@ -330,8 +330,9 @@ def manage():
                 if preference:
                     db.execute('INSERT OR IGNORE INTO teacher_preferences (teacher_id, preference) VALUES ((SELECT teacher_id FROM teachers WHERE name = ?), ?)', (name, preference))
                 db.commit()
+                flash(f'Teacher "{name}" added successfully!', 'success')
             except sqlite3.IntegrityError:
-                pass # Teacher already exists
+                flash(f'Error: Teacher "{name}" already exists.', 'error')
             return redirect(url_for('manage'))
         
         elif form_name == 'add_subject_form':
@@ -340,8 +341,9 @@ def manage():
             try:
                 db.execute('INSERT INTO subjects (name, code) VALUES (?, ?)', (name, code))
                 db.commit()
+                flash(f'Subject "{name}" added successfully!', 'success')
             except sqlite3.IntegrityError:
-                pass # Subject already exists
+                flash(f'Error: Subject "{name}" already exists.', 'error')
             return redirect(url_for('manage'))
 
         elif form_name == 'add_class_form':
@@ -349,8 +351,9 @@ def manage():
             try:
                 db.execute('INSERT INTO classes (name) VALUES (?)', (name,))
                 db.commit()
+                flash(f'Class "{name}" added successfully!', 'success')
             except sqlite3.IntegrityError:
-                pass # Class already exists
+                flash(f'Error: Class "{name}" already exists.', 'error')
             return redirect(url_for('manage'))
 
         elif form_name == 'add_classroom_form':
@@ -359,8 +362,9 @@ def manage():
             try:
                 db.execute('INSERT INTO classrooms (name, is_lab) VALUES (?, ?)', (name, is_lab))
                 db.commit()
+                flash(f'Classroom "{name}" added successfully!', 'success')
             except sqlite3.IntegrityError:
-                pass # Classroom already exists
+                flash(f'Error: Classroom "{name}" already exists.', 'error')
             return redirect(url_for('manage'))
 
         elif form_name == 'add_course_form':
@@ -373,8 +377,9 @@ def manage():
                 db.execute('INSERT INTO courses (class_id, subject_id, teacher_id, weekly_lectures, is_lab) VALUES (?, ?, ?, ?, ?)',
                            (class_id, subject_id, teacher_id, weekly_lectures, is_lab))
                 db.commit()
+                flash('Course assignment added successfully!', 'success')
             except sqlite3.IntegrityError:
-                pass
+                flash('Error: Course assignment already exists.', 'error')
             return redirect(url_for('manage'))
 
         elif form_name == 'schedule_config_form':
@@ -393,6 +398,7 @@ def manage():
             cur.executemany('INSERT INTO schedule_config (config_id, is_break, start_time, end_time, break_name) VALUES (?, ?, ?, ?, ?)', slots_data)
             db.commit()
             
+            flash('Schedule configuration saved successfully!', 'success')
             return redirect(url_for('manage'))
 
         elif form_name.startswith('delete_'):
@@ -410,10 +416,10 @@ def manage():
                     record_id = request.form[f'{entity}_id']
                     db.execute(f'DELETE FROM {entity}s WHERE {column_id} = ?', (record_id,)) # Note the 's' in the table name
                     db.commit()
+                    flash(f'{entity.capitalize()} deleted successfully!', 'success')
                 except (sqlite3.IntegrityError, KeyError):
-                    pass
+                    flash(f'Error: Cannot delete {entity} because it is in use by another record.', 'error')
             return redirect(url_for('manage'))
-
 
     teachers = cur.execute('SELECT * FROM teachers').fetchall()
     subjects = cur.execute('SELECT * FROM subjects').fetchall()

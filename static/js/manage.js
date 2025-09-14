@@ -1,9 +1,13 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // Event listeners for form submissions on the schedule configuration form
-    const scheduleConfigForm = document.getElementById('scheduleConfigForm');
+    // This is the function that will display the alert pop-ups
+    const messages = document.querySelectorAll('.flash-message');
+    messages.forEach(message => {
+        alert(message.textContent);
+    });
+
+    // Schedule Config form event listeners
     const addSlotBtn = document.getElementById('addSlotBtn');
 
-    // Add slot button listener
     if (addSlotBtn) {
         addSlotBtn.addEventListener('click', addSlotInput);
     }

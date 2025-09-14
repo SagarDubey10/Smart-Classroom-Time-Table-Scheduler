@@ -14,10 +14,22 @@
         <a href="{{ url_for('index') }}" class="btn btn-secondary">View Timetables</a>
     </div>
 
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="alert-container">
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
     <div class="card p-3 mb-4">
         <h2 class="card-title">Schedule Configuration</h2>
         <p class="text-white">Define the time slots for lectures and breaks. The timetable will be generated based on this configuration.</p>
-        <form id="scheduleConfigForm" action="{{ url_for('manage') }}" method="post">
+        <form id="scheduleConfigForm" action="{{ url_for('manage') }}" method="post" onsubmit="return confirm('Are you sure you want to save the new schedule? This will overwrite the previous one.');">
             <input type="hidden" name="form_name" value="schedule_config_form">
             <div id="slotInputs">
                 {% for slot in schedule_config %}
@@ -42,7 +54,7 @@
         <div class="col-md-6 mb-4">
             <div class="card p-3 h-100">
                 <h2 class="card-title">Add Teacher</h2>
-                <form id="addTeacherForm" action="{{ url_for('manage') }}" method="post" onsubmit="return handleFormSubmit(this, 'Teacher added successfully!')">
+                <form id="addTeacherForm" action="{{ url_for('manage') }}" method="post" onsubmit="return confirm('Are you sure you want to add this teacher?');">
                     <input type="hidden" name="form_name" value="add_teacher_form">
                     <div class="mb-3">
                         <input type="text" id="teacherName" name="teacher_name" class="form-control" placeholder="Teacher Name" required>
@@ -84,7 +96,7 @@
         <div class="col-md-6 mb-4">
             <div class="card p-3 h-100">
                 <h2 class="card-title">Add Subject</h2>
-                <form id="addSubjectForm" action="{{ url_for('manage') }}" method="post" onsubmit="return handleFormSubmit(this, 'Subject added successfully!')">
+                <form id="addSubjectForm" action="{{ url_for('manage') }}" method="post" onsubmit="return confirm('Are you sure you want to add this subject?');">
                     <input type="hidden" name="form_name" value="add_subject_form">
                     <div class="mb-3">
                         <input type="text" id="subjectName" name="subject_name" class="form-control" placeholder="Subject Name" required>
@@ -127,7 +139,7 @@
                 <div class="row">
                     <div class="col-md-6">
                         <h4>Add Class</h4>
-                        <form id="addClassForm" action="{{ url_for('manage') }}" method="post" onsubmit="return handleFormSubmit(this, 'Class added successfully!')">
+                        <form id="addClassForm" action="{{ url_for('manage') }}" method="post" onsubmit="return confirm('Are you sure you want to add this class?');">
                             <input type="hidden" name="form_name" value="add_class_form">
                             <input type="text" id="className" name="class_name" class="form-control" placeholder="Class Name (e.g., TE-B1)" required>
                             <button type="submit" class="btn btn-primary mt-2">Add Class</button>
@@ -156,7 +168,7 @@
                     </div>
                     <div class="col-md-6">
                         <h4>Add Classroom</h4>
-                        <form id="addClassroomForm" action="{{ url_for('manage') }}" method="post" onsubmit="return handleFormSubmit(this, 'Classroom added successfully!')">
+                        <form id="addClassroomForm" action="{{ url_for('manage') }}" method="post" onsubmit="return confirm('Are you sure you want to add this classroom?');">
                             <input type="hidden" name="form_name" value="add_classroom_form">
                             <input type="text" id="classroomName" name="classroom_name" class="form-control" placeholder="Room Name (e.g., LAB-1)" required>
                             <select id="isLab" name="is_lab" class="form-control mt-2">
@@ -195,7 +207,7 @@
         <div class="col-md-6 mb-4">
             <div class="card p-3 h-100">
                 <h2 class="card-title">Assign Course</h2>
-                <form id="addCourseForm" action="{{ url_for('manage') }}" method="post" onsubmit="return handleFormSubmit(this, 'Course assignment added successfully!')">
+                <form id="addCourseForm" action="{{ url_for('manage') }}" method="post" onsubmit="return confirm('Are you sure you want to add this course assignment?');">
                     <input type="hidden" name="form_name" value="add_course_form">
                     <div class="mb-3">
                         <select id="courseClass" name="course_class" class="form-control" required>
