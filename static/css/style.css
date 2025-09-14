@@ -125,8 +125,8 @@ td small {
 /* Print-Specific Styles */
 @media print {
     body {
-        background-color: #fff;
-        color: #000;
+        background-color: #fff !important;
+        color: #000 !important;
         font-size: 10pt;
         -webkit-print-color-adjust: exact;
         color-adjust: exact;
@@ -145,12 +145,13 @@ td small {
         display: block !important;
         text-align: center;
         margin-bottom: 20px;
+        color: #000 !important;
     }
 
     .card {
-        background-color: #fff;
-        border: 1px solid #ccc;
-        box-shadow: none;
+        background-color: #fff !important;
+        border: 1px solid #ccc !important;
+        box-shadow: none !important;
     }
 
     .timetable-table {
@@ -162,12 +163,19 @@ td small {
 
     .timetable-table thead th,
     .timetable-table td {
-        border: 1px solid #000;
+        border: 1px solid #000 !important;
         padding: 5px;
         font-size: 8pt;
     }
 
-    /* Override all background and text colors to be print-friendly */
+    /* Force all table backgrounds and text to be white/black */
+    .timetable-table,
+    .timetable-table th,
+    .timetable-table td {
+        background-color: #fff !important;
+        color: #000 !important;
+    }
+
     .timetable-table thead th {
         background-color: #e9ecef !important;
         color: #000 !important;
@@ -179,29 +187,29 @@ td small {
         color: #000 !important;
     }
 
-    .timetable-table td {
-        background-color: #fff !important;
-        color: #000 !important;
-    }
-
     .break-slot {
         background-color: #d1d1d1 !important;
         color: #000 !important;
         font-weight: bold;
     }
 
-    /* Ensure the borders for empty cells are visible */
     .empty-slot {
         background-color: #fff !important;
-        border: 1px solid #000;
+        border: 1px solid #000 !important;
+        color: transparent !important;
+        text-indent: -9999px !important;
     }
 
+    /* Hide the 'Click to add' text in all cases */
     .empty-slot::before {
-        content: '';
+        content: "" !important;
     }
 
-    td small {
-        color: #000;
+    /* Ensure all content within non-empty cells is visible */
+    .timetable-table td strong,
+    .timetable-table td small {
+        color: #000 !important;
+        text-indent: 0 !important;
     }
 
     @page {

@@ -37,8 +37,94 @@ document.addEventListener('DOMContentLoaded', () => {
     renderTimetable();
   });
 
-  printBtn.addEventListener('click', () => {
-    window.print();
+  // The new fix: Print by generating a new HTML document
+  printBtn.addEventListener('click', async () => {
+    const selectedClass = classSelect.value;
+    if (!selectedClass) {
+      alert("Please select a class to print.");
+      return;
+    }
+
+    const res = await fetch(`/api/timetables/${selectedClass}`);
+    const data = await res.json();
+
+    let printWindow = window.open('', '_blank');
+
+    // Generate the new HTML content for printing
+    let printContent = `
+            <html>
+            <head>
+                <title>Timetable for ${selectedClass}</title>
+                <style>
+                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 1cm; }
+                    .timetable-table { width: 100%; border-collapse: collapse; }
+                    .timetable-table th, .timetable-table td { border: 1px solid #000; padding: 5px; text-align: center; font-size: 8pt; }
+                    .timetable-table th { background-color: #e9ecef; }
+                    .break-slot { background-color: #d1d1d1; font-weight: bold; }
+                    .empty-slot::before { content: ""; }
+                    /* Make all text black and backgrounds white for clean printing */
+                    .timetable-table, .timetable-table th, .timetable-table td { background-color: #fff !important; color: #000 !important; }
+                    @page { size: A4 landscape; margin: 1cm; }
+                </style>
+            </head>
+            <body>
+                <h1 style="text-align: center;">Timetable for ${selectedClass}</h1>
+                <table class="timetable-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            ${data.days.map(day => `<th>${day}</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.slots_full.map(slot => {
+      let slotStart = slot.start_time;
+      let slotEnd = slot.end_time;
+      let timeFormatted = `${slotStart} - ${slotEnd}`;
+
+      if (slot.is_break) {
+        return `
+                                    <tr>
+                                        <td>${timeFormatted}</td>
+                                        <td colspan="${data.days.length}" class="break-slot">${slot.break_name}</td>
+                                    </tr>
+                                `;
+      }
+
+      return `
+                                <tr>
+                                    <td>${timeFormatted}</td>
+                                    ${data.days.map(day => {
+        const cellData = data.grid[day][slotStart];
+        if (cellData) {
+          return `
+                                                <td style="background-color: #fff !important; color: #000 !important;">
+                                                    <strong>${cellData.subject_name}</strong><br>
+                                                    <small>${cellData.teacher_name}</small><br>
+                                                    <small>@${cellData.classroom_name}</small>
+                                                </td>
+                                            `;
+        } else {
+          return `
+                                                <td style="background-color: #fff !important; color: #000 !important;" class="empty-slot"></td>
+                                            `;
+        }
+      }).join('')}
+                                </tr>
+                            `;
+    }).join('')}
+                    </tbody>
+                </table>
+            </body>
+            </html>
+        `;
+
+    // Write the new HTML to the print window and trigger printing
+    printWindow.document.write(printContent);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+    printWindow.close();
   });
 
   saveSlotBtn.addEventListener('click', async () => {
