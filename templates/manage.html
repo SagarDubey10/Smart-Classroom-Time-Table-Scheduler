@@ -14,6 +14,29 @@
         <a href="{{ url_for('index') }}" class="btn btn-secondary">View Timetables</a>
     </div>
 
+    <div class="card p-3 mb-4">
+        <h2 class="card-title">Schedule Configuration</h2>
+        <p class="text-white">Define the time slots for lectures and breaks. The timetable will be generated based on this configuration.</p>
+        <form id="scheduleConfigForm">
+            <div id="slotInputs">
+                {% for slot in schedule_config %}
+                    <div class="input-group mb-2">
+                        <input type="time" class="form-control" placeholder="Start Time" value="{{ slot.start_time }}" required>
+                        <input type="time" class="form-control" placeholder="End Time" value="{{ slot.end_time }}" required>
+                        <select class="form-control is-break-select">
+                            <option value="0" {% if not slot.is_break %}selected{% endif %}>Lecture</option>
+                            <option value="1" {% if slot.is_break %}selected{% endif %}>Break</option>
+                        </select>
+                        <input type="text" class="form-control break-name-input" placeholder="Break Name (optional)" value="{{ slot.break_name or '' }}" {% if not slot.is_break %}disabled{% endif %}>
+                        <button type="button" class="btn btn-danger remove-slot">X</button>
+                    </div>
+                {% endfor %}
+            </div>
+            <button type="button" class="btn btn-secondary mt-2" id="addSlotBtn">Add Slot</button>
+            <button type="submit" class="btn btn-primary mt-3">Save Schedule</button>
+        </form>
+    </div>
+
     <div class="row">
         <div class="col-md-6 mb-4">
             <div class="card p-3 h-100">
@@ -40,7 +63,8 @@
                             <tr>
                                 <td>{{ teacher.teacher_id }}</td>
                                 <td>{{ teacher.name }}</td>
-                                <td>N/A</td> <td><button onclick="deleteEntity('teachers', {{ teacher.teacher_id }})" class="btn btn-danger btn-sm">Delete</button></td>
+                                <td>N/A</td>
+                                <td><button onclick="deleteEntity('teachers', {{ teacher.teacher_id }})" class="btn btn-danger btn-sm">Delete</button></td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -193,6 +217,7 @@
     </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/js/bootstrap.bundle.min.js"></script>
 <script src="{{ url_for('static', filename='js/manage.js') }}"></script>
 </body>
 </html>

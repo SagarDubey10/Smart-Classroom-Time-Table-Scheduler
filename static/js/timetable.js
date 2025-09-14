@@ -117,7 +117,6 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // Correct API call using the class name string
     const res = await fetch(`/api/timetables/${selectedClass}`);
     const data = await res.json();
     const timetableContainer = document.getElementById('timetableContainer');
@@ -134,18 +133,30 @@ document.addEventListener('DOMContentLoaded', () => {
                         </tr>
                     </thead>
                     <tbody>
-                        ${data.slots.map((slotTime, i) => {
-      const timeFormatted = `${slotTime} - ${data.slots[i + 1] || ' '}`;
+                        ${data.slots_full.map(slot => {
+      let slotStart = slot.start_time;
+      let slotEnd = slot.end_time;
+      let timeFormatted = `${slotStart} - ${slotEnd}`;
+
+      if (slot.is_break) {
+        return `
+                                    <tr>
+                                        <td>${timeFormatted}</td>
+                                        <td colspan="${data.days.length}" class="break-slot text-center">${slot.break_name}</td>
+                                    </tr>
+                                `;
+      }
+
       return `
                                 <tr>
                                     <td>${timeFormatted}</td>
                                     ${data.days.map(day => {
-        const cellData = data.grid[day][slotTime];
+        const cellData = data.grid[day][slotStart];
         if (cellData) {
           return `
                                                 <td class="${cellData.is_lab ? 'lab-session' : 'theory-session'}" 
                                                     data-day="${day}" 
-                                                    data-time="${slotTime}" 
+                                                    data-time="${slotStart}" 
                                                     data-class-id="${classId}"
                                                     data-slot-id="${cellData.slot_id}"
                                                     data-course-id="${cellData.course_id}"
@@ -163,7 +174,7 @@ document.addEventListener('DOMContentLoaded', () => {
           return `
                                                 <td class="empty-slot" 
                                                     data-day="${day}" 
-                                                    data-time="${slotTime}" 
+                                                    data-time="${slotStart}" 
                                                     data-class-id="${classId}"
                                                     data-bs-toggle="modal" 
                                                     data-bs-target="#editSlotModal">
@@ -181,26 +192,25 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
     timetableContainer.innerHTML = html;
 
-    // Add event listeners to each timetable cell
     document.querySelectorAll('.timetable-table td').forEach(cell => {
       cell.addEventListener('click', (e) => {
         const day = e.target.dataset.day;
         const time = e.target.dataset.time;
+        if (!day || !time) return;
+
         const slotId = e.target.dataset.slotId || '';
         const subjectId = e.target.dataset.subjectId || '';
         const teacherId = e.target.dataset.teacherId || '';
         const classroomId = e.target.dataset.classroomId || '';
         const classId = e.target.dataset.classId;
 
-        // Populate the modal
         modalDay.value = day;
         modalTime.value = time;
         modalSlotId.value = slotId;
         modalClassId.value = classId;
         modalStartTime.value = time;
-        modalEndTime.value = data.slots[data.slots.indexOf(time) + 1] || '';
+        modalEndTime.value = data.slots_full.find(s => s.start_time === time).end_time;
 
-        // Populate select options
         populateSelect(modalSubject, data.options.subjects, 'subject_id', 'name', subjectId);
         populateSelect(modalTeacher, data.options.teachers, 'teacher_id', 'name', teacherId);
         populateSelect(modalClassroom, data.options.classrooms, 'classroom_id', 'name', classroomId);

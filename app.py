@@ -1,4 +1,3 @@
-# app.py
 from flask import Flask, render_template, request, jsonify, g, redirect, url_for, send_file
 import sqlite3
 from datetime import datetime, timedelta
@@ -9,19 +8,9 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 import io
 
-# Import the blueprint from the new file
-from admin_routes import admin_bp
-
 app = Flask(__name__)
 DB_PATH = 'timetable.db'
 DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
-SLOT_TIMES = [
-    ('09:00', '10:00'), ('10:00', '11:00'), ('11:00', '12:00'),
-    ('12:30', '13:30'), ('13:30', '14:30'), ('14:30', '15:30'), ('15:30', '16:30')
-]
-
-# Register the blueprint
-app.register_blueprint(admin_bp)
 
 # --- DATABASE HELPERS ---
 def get_db():
@@ -91,6 +80,13 @@ def init_db():
                 FOREIGN KEY (teacher_id) REFERENCES teachers(teacher_id),
                 FOREIGN KEY (classroom_id) REFERENCES classrooms(classroom_id)
             );
+            CREATE TABLE IF NOT EXISTS schedule_config (
+                config_id INTEGER PRIMARY KEY,
+                is_break INTEGER,
+                start_time TEXT,
+                end_time TEXT,
+                break_name TEXT
+            );
         ''')
         db.commit()
 
@@ -105,6 +101,7 @@ def seed_sample_data():
         DELETE FROM classes;
         DELETE FROM teacher_preferences;
         DELETE FROM teachers;
+        DELETE FROM schedule_config;
     ''')
     teachers = [('Prof. Ghule',), ('Prof. Bhosle',), ('Prof. Pingle',), ('Dr. Deshmukh',), ('Ms. Shaikh',)]
     cur.executemany('INSERT INTO teachers (name) VALUES (?)', teachers)
@@ -121,9 +118,9 @@ def seed_sample_data():
     courses = [
         (class_ids['TE-B1'], subject_ids['CS201'], teacher_ids['Prof. Ghule'], 3, 0),
         (class_ids['TE-B1'], subject_ids['CS202'], teacher_ids['Prof. Bhosle'], 3, 0),
-        (class_ids['TE-B1'], subject_ids['CSL201'], teacher_ids['Prof. Pingle'], 2, 1), # Lab (2-hr session, 2 times a week = 4 hours)
+        (class_ids['TE-B1'], subject_ids['CSL201'], teacher_ids['Prof. Pingle'], 2, 1), 
         (class_ids['TE-B2'], subject_ids['CS301'], teacher_ids['Dr. Deshmukh'], 3, 0),
-        (class_ids['TE-B2'], subject_ids['CSL301'], teacher_ids['Ms. Shaikh'], 2, 1),  # Lab (2-hr session, 2 times a week = 4 hours)
+        (class_ids['TE-B2'], subject_ids['CSL301'], teacher_ids['Ms. Shaikh'], 2, 1),
         (class_ids['BE-A'], subject_ids['CS301'], teacher_ids['Prof. Ghule'], 4, 0)
     ]
     cur.executemany('INSERT INTO courses (class_id, subject_id, teacher_id, weekly_lectures, is_lab) VALUES (?, ?, ?, ?, ?)', courses)
@@ -133,9 +130,29 @@ def seed_sample_data():
         (teacher_ids['Prof. Bhosle'], 'afternoon')
     ]
     cur.executemany('INSERT OR REPLACE INTO teacher_preferences (teacher_id, preference) VALUES (?, ?)', teacher_prefs)
+
+    # Seed initial schedule configuration
+    config = [
+        (1, 0, '10:30 AM', '11:30 AM', None),
+        (2, 0, '11:30 AM', '12:30 PM', None),
+        (3, 0, '12:30 PM', '01:30 PM', None),
+        (4, 1, '01:30 PM', '02:15 PM', 'Lunch Break'),
+        (5, 0, '02:15 PM', '03:15 PM', None),
+        (6, 1, '03:15 PM', '03:30 PM', 'Short Break'),
+        (7, 0, '03:30 PM', '04:30 PM', None),
+        (8, 0, '04:30 PM', '05:30 PM', None)
+    ]
+    cur.executemany('INSERT INTO schedule_config (config_id, is_break, start_time, end_time, break_name) VALUES (?, ?, ?, ?, ?)', config)
+
     db.commit()
 
 # --- TIMETABLE GENERATION & VALIDATION ---
+def get_slot_times():
+    db = get_db()
+    cur = db.cursor()
+    cur.execute('SELECT start_time, end_time, is_break, break_name FROM schedule_config ORDER BY config_id')
+    return cur.fetchall()
+
 def generate_timetable():
     db = get_db()
     cur = db.cursor()
@@ -146,6 +163,9 @@ def generate_timetable():
     teacher_prefs = {row['teacher_id']: row['preference'] for row in cur.execute('SELECT * FROM teacher_preferences').fetchall()}
     teacher_lab_times = {}
 
+    SLOTS = get_slot_times()
+    TEACHABLE_SLOTS = [(i, s) for i, s in enumerate(SLOTS) if not s['is_break']]
+    
     def is_slot_available(day, time_start, time_end, teacher_id, classroom_id, class_id):
         cur.execute('SELECT 1 FROM timetable_slots WHERE teacher_id = ? AND day = ? AND NOT (time_end <= ? OR time_start >= ?)', (teacher_id, day, time_start, time_end))
         if cur.fetchone(): return False
@@ -156,9 +176,12 @@ def generate_timetable():
         return True
 
     def schedule_session(course, day, start_slot_index, duration, classroom):
-        if start_slot_index + duration > len(SLOT_TIMES): return False
-        start_time = SLOT_TIMES[start_slot_index][0]
-        end_time = SLOT_TIMES[start_slot_index + duration - 1][1]
+        if start_slot_index + duration > len(TEACHABLE_SLOTS): return False
+        start_time_idx = TEACHABLE_SLOTS[start_slot_index][0]
+        end_time_idx = TEACHABLE_SLOTS[start_slot_index + duration - 1][0]
+        start_time = SLOTS[start_time_idx]['start_time']
+        end_time = SLOTS[end_time_idx]['end_time']
+        
         if is_slot_available(day, start_time, end_time, course['teacher_id'], classroom['classroom_id'], course['class_id']):
             cur.execute('''
                 INSERT INTO timetable_slots (class_id, day, time_start, time_end, course_id, teacher_id, classroom_id)
@@ -171,55 +194,59 @@ def generate_timetable():
     labs_to_schedule = []
     for course in courses:
         if course['is_lab']:
-            # Schedule a 2-hour lab session for a total of 'weekly_lectures' hours
             for _ in range(course['weekly_lectures'] // 2):
                 labs_to_schedule.append(course)
         else:
             for _ in range(course['weekly_lectures']):
                 lectures_to_schedule.append(course)
     
-    # 1. Schedule Labs First (2-hour blocks)
     cur.execute('SELECT * FROM classrooms WHERE is_lab = 1')
     lab_rooms = cur.fetchall()
     for lab in labs_to_schedule:
         placed = False
         for day in random.sample(DAYS, len(DAYS)):
-            for i in range(len(SLOT_TIMES) - 1):
+            for i in range(len(TEACHABLE_SLOTS) - 1):
                 room = random.choice(lab_rooms)
                 if schedule_session(lab, day, i, 2, room):
                     placed = True
-                    teacher_lab_times[lab['teacher_id']] = {'day': day, 'end_time': SLOT_TIMES[i + 1][1]}
+                    start_slot_idx_abs = TEACHABLE_SLOTS[i][0]
+                    teacher_lab_times[lab['teacher_id']] = {'day': day, 'end_time': SLOTS[start_slot_idx_abs + 1]['end_time']}
                     break
             if placed: break
     
-    # 2. Schedule Lectures with constraints
+    theory_lecture_days = {day: set() for day in DAYS}
+    teacher_last_slot = {}
+    
     for lecture in lectures_to_schedule:
         placed = False
         teacher_id = lecture['teacher_id']
         teacher_pref = teacher_prefs.get(teacher_id)
+        class_id = lecture['class_id']
         
         days_to_try = random.sample(DAYS, len(DAYS))
         random.shuffle(days_to_try)
         
         for day in days_to_try:
-            slots_to_try = list(range(len(SLOT_TIMES)))
+            if class_id in theory_lecture_days[day]:
+                continue
+                
+            slots_to_try = list(range(len(TEACHABLE_SLOTS)))
             random.shuffle(slots_to_try)
             
-            # Prioritize based on preference
             if teacher_pref == 'morning':
                 slots_to_try.sort(key=lambda i: i > 2)
             elif teacher_pref == 'afternoon':
                 slots_to_try.sort(key=lambda i: i <= 2)
                 
             for i in slots_to_try:
-                start_time = SLOT_TIMES[i][0]
-                end_time = SLOT_TIMES[i][1]
+                start_slot_idx_abs = TEACHABLE_SLOTS[i][0]
+                start_time = SLOTS[start_slot_idx_abs]['start_time']
+                end_time = SLOTS[start_slot_idx_abs]['end_time']
                 
-                # Check for 2-hour gap after lab
                 lab_info = teacher_lab_times.get(teacher_id)
                 if lab_info and lab_info['day'] == day:
-                    lab_end_time = datetime.strptime(lab_info['end_time'], '%H:%M')
-                    current_start_time = datetime.strptime(start_time, '%H:%M')
+                    lab_end_time = datetime.strptime(lab_info['end_time'], '%I:%M %p')
+                    current_start_time = datetime.strptime(start_time, '%I:%M %p')
                     if (current_start_time - lab_end_time).total_seconds() < 7200:
                         continue
                 
@@ -230,6 +257,7 @@ def generate_timetable():
                 room = random.choice(theory_rooms)
                 if schedule_session(lecture, day, i, 1, room):
                     placed = True
+                    theory_lecture_days[day].add(class_id)
                     break
             if placed: break
     db.commit()
@@ -238,6 +266,14 @@ def validate_change(slot_id, day, time_start, time_end, teacher_id, classroom_id
     db = get_db()
     cur = db.cursor()
     
+    cur.execute('SELECT is_lab FROM courses WHERE subject_id IN (SELECT subject_id FROM timetable_slots WHERE slot_id = ?)', (slot_id,))
+    is_lab_row = cur.fetchone()
+    is_lab = is_lab_row['is_lab'] if is_lab_row else 0
+    if not is_lab:
+        cur.execute('SELECT 1 FROM timetable_slots ts JOIN courses co ON ts.course_id = co.course_id WHERE ts.day = ? AND ts.class_id = ? AND co.is_lab = 0 AND ts.slot_id != ?', (day, class_id, slot_id))
+        if cur.fetchone():
+            return False, 'Error: Only one theory lecture per day for this class is allowed.'
+
     query = 'SELECT teacher_id FROM timetable_slots WHERE day = ? AND NOT (time_end <= ? OR time_start >= ?) AND teacher_id = ?'
     params = (day, time_start, time_end, teacher_id)
     if slot_id:
@@ -291,7 +327,8 @@ def manage():
         JOIN subjects sub ON c.subject_id = sub.subject_id
         JOIN classes cl ON c.class_id = cl.class_id
     ''').fetchall()
-    return render_template('manage.html', teachers=teachers, subjects=subjects, classes=classes, classrooms=classrooms, courses=courses)
+    schedule_config = get_slot_times()
+    return render_template('manage.html', teachers=teachers, subjects=subjects, classes=classes, classrooms=classrooms, courses=courses, schedule_config=schedule_config)
 
 @app.route('/api/timetable/generate', methods=['POST'])
 def api_generate():
@@ -308,7 +345,9 @@ def api_get_timetable(class_name):
         return jsonify({'error': 'Class not found'}), 404
     class_id = class_id_row['class_id']
     
-    grid = {day: {slot[0]: None for slot in SLOT_TIMES} for day in DAYS}
+    SLOTS = get_slot_times()
+    TEACHABLE_SLOTS = [s for s in SLOTS if not s['is_break']]
+    grid = {day: {slot['start_time']: None for slot in TEACHABLE_SLOTS} for day in DAYS}
     
     slots_query = '''
         SELECT ts.*, t.name as teacher_name, s.name as subject_name, c.name as classroom_name, co.is_lab
@@ -323,19 +362,20 @@ def api_get_timetable(class_name):
     slots = cur.fetchall()
     
     for slot in slots:
-        start_time_obj = datetime.strptime(slot['time_start'], '%H:%M')
-        end_time_obj = datetime.strptime(slot['time_end'], '%H:%M')
+        start_time_obj = datetime.strptime(slot['time_start'], '%I:%M %p')
+        end_time_obj = datetime.strptime(slot['time_end'], '%I:%M %p')
         duration_minutes = (end_time_obj - start_time_obj).total_seconds() / 60
         
-        start_index = next(i for i, time in enumerate(SLOT_TIMES) if time[0] == slot['time_start'])
-        
-        # Determine how many slots to fill
-        # This assumes each slot is 60 minutes.
+        try:
+            start_index = next(i for i, time in enumerate(SLOTS) if time['start_time'] == slot['time_start'])
+        except StopIteration:
+            continue
+            
         duration_slots = int(duration_minutes / 60)
         
         for i in range(start_index, start_index + duration_slots):
-            if i < len(SLOT_TIMES):
-                grid[slot['day']][SLOT_TIMES[i][0]] = dict(slot)
+            if i < len(SLOTS) and not SLOTS[i]['is_break']:
+                grid[slot['day']][SLOTS[i]['start_time']] = dict(slot)
             
     cur.execute('SELECT teacher_id, name FROM teachers')
     teachers = [dict(row) for row in cur.fetchall()]
@@ -351,7 +391,8 @@ def api_get_timetable(class_name):
     return jsonify({
         'grid': grid, 
         'days': DAYS, 
-        'slots': [s[0] for s in SLOT_TIMES],
+        'slots': [s['start_time'] for s in SLOTS if not s['is_break']],
+        'slots_full': [dict(s) for s in SLOTS],
         'options': {'teachers': teachers, 'subjects': subjects, 'classrooms': classrooms, 'courses': courses, 'classes': classes}
     })
 
@@ -410,12 +451,27 @@ def api_update():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+@app.route('/api/admin/schedule_config', methods=['GET', 'POST'])
+def api_update_schedule_config():
+    db = get_db()
+    cur = db.cursor()
+    if request.method == 'POST':
+        data = request.json
+        cur.execute('DELETE FROM schedule_config')
+        
+        config = [(i + 1, slot['is_break'], slot['start'], slot['end'], slot.get('name')) for i, slot in enumerate(data['slots'])]
+        cur.executemany('INSERT INTO schedule_config (config_id, is_break, start_time, end_time, break_name) VALUES (?, ?, ?, ?, ?)', config)
+        db.commit()
+        return jsonify({'status': 'success', 'message': 'Schedule configuration updated!'})
+    else:
+        schedule_config = [dict(row) for row in cur.execute('SELECT * FROM schedule_config ORDER BY config_id').fetchall()]
+        return jsonify({'status': 'success', 'config': schedule_config})
+
 
 # --- Admin Panel Delete Route ---
 @app.route('/api/admin/delete/<entity>/<id>', methods=['DELETE'])
 def delete_entity(entity, id):
     db = get_db()
-    # Use a dictionary to map plural entity names to singular column IDs
     id_map = {
         'teachers': 'teacher_id',
         'subjects': 'subject_id',
@@ -438,33 +494,15 @@ def delete_entity(entity, id):
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-
 @app.route('/download/pdf/<class_name>')
 def download_pdf(class_name):
     db = get_db()
     cur = db.cursor()
     cur.execute('SELECT class_id FROM classes WHERE name = ?', (class_name,))
     class_id = cur.fetchone()['class_id']
-    timetable_data = [['Time'] + DAYS]
-    for slot_time in SLOT_TIMES:
-        row = [f"{slot_time[0]} - {slot_time[1]}"]
-        for day in DAYS:
-            cur.execute('''
-                SELECT s.name as subject_name, t.name as teacher_name, c.name as classroom_name
-                FROM timetable_slots ts
-                JOIN courses co ON ts.course_id = co.course_id
-                JOIN subjects s ON co.subject_id = s.subject_id
-                JOIN teachers t ON ts.teacher_id = t.teacher_id
-                JOIN classrooms c ON ts.classroom_id = c.classroom_id
-                WHERE ts.class_id = ? AND ts.day = ? AND ts.time_start = ?
-            ''', (class_id, day, slot_time[0]))
-            result = cur.fetchone()
-            if result:
-                row.append(f"{result['subject_name']}\n({result['teacher_name']})\n@{result['classroom_name']}")
-            else:
-                row.append('')
-        timetable_data.append(row)
+    SLOTS = get_slot_times()
     
+    # PDF generation logic
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
     styles = getSampleStyleSheet()
@@ -472,6 +510,38 @@ def download_pdf(class_name):
     title_style = styles['Title']
     story.append(Paragraph(f"Timetable for {class_name}", title_style))
     story.append(Spacer(1, 0.2 * 10))
+
+    # Prepare data for the PDF table, handling breaks as merged cells
+    timetable_data_pdf = [['Time'] + DAYS]
+    
+    for slot in SLOTS:
+        if slot['is_break']:
+            # For a break, create a row with the time and a single cell spanning the entire width
+            row = [f"{slot['start_time']} - {slot['end_time']}", slot['break_name']]
+            timetable_data_pdf.append(row)
+        else:
+            # For a lecture slot, create a row with cells for each day
+            row = [f"{slot['start_time']} - {slot['end_time']}"]
+            for day in DAYS:
+                cur.execute('''
+                    SELECT s.name as subject_name, t.name as teacher_name, c.name as classroom_name
+                    FROM timetable_slots ts
+                    JOIN courses co ON ts.course_id = co.course_id
+                    JOIN subjects s ON co.subject_id = s.subject_id
+                    JOIN teachers t ON ts.teacher_id = t.teacher_id
+                    JOIN classrooms c ON ts.classroom_id = c.classroom_id
+                    WHERE ts.class_id = ? AND ts.day = ? AND ts.time_start = ?
+                ''', (class_id, day, slot['start_time']))
+                result = cur.fetchone()
+                if result:
+                    row.append(f"{result['subject_name']}\n({result['teacher_name']})\n@{result['classroom_name']}")
+                else:
+                    row.append('')
+            timetable_data_pdf.append(row)
+
+    # Calculate column widths and styling for the PDF table
+    num_cols = len(DAYS) + 1
+    col_widths = [1.5*72] + [1.5*72] * len(DAYS)
     table_style = TableStyle([
         ('GRID', (0, 0), (-1, -1), 1, colors.black),
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2a2a3d')),
@@ -481,9 +551,19 @@ def download_pdf(class_name):
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ('FONTSIZE', (0, 0), (-1, -1), 8),
     ])
-    timetable_table = Table(timetable_data, colWidths=[1.5*72, 1.5*72, 1.5*72, 1.5*72, 1.5*72, 1.5*72, 1.5*72])
+
+    # Add SPAN commands for break rows
+    row_index = 0
+    for slot in SLOTS:
+        if slot['is_break']:
+            table_style.add('SPAN', (1, row_index + 1), (num_cols - 1, row_index + 1))
+            table_style.add('BACKGROUND', (1, row_index + 1), (num_cols - 1, row_index + 1), colors.HexColor('#5c6c7c'))
+        row_index += 1
+
+    timetable_table = Table(timetable_data_pdf, colWidths=col_widths)
     timetable_table.setStyle(table_style)
     story.append(timetable_table)
+    
     doc.build(story)
     buffer.seek(0)
     return send_file(buffer, as_attachment=True, download_name=f'timetable_{class_name}.pdf', mimetype='application/pdf')
