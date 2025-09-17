@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, g, redirect, url_for, flash, get_flashed_messages
+from flask import Flask, render_template, request, jsonify, g, redirect, url_for, flash
 import sqlite3
 from datetime import datetime, timedelta
 import random
@@ -404,22 +404,24 @@ def manage():
         elif form_name.startswith('delete_'):
             entity = form_name.replace('delete_', '').replace('_form', '')
             id_map = {
-                'teacher': 'teacher_id',
-                'subject': 'subject_id',
-                'class': 'class_id',
-                'classroom': 'classroom_id',
-                'course': 'course_id'
+                'teacher': ('teachers', 'teacher_id'),
+                'subject': ('subjects', 'subject_id'),
+                'class': ('classes', 'class_id'),
+                'classroom': ('classrooms', 'classroom_id'),
+                'course': ('courses', 'course_id')
             }
-            column_id = id_map.get(entity)
-            if column_id:
+            table_info = id_map.get(entity)
+            if table_info:
+                table_name, column_id = table_info
                 try:
                     record_id = request.form[f'{entity}_id']
-                    db.execute(f'DELETE FROM {entity}s WHERE {column_id} = ?', (record_id,)) # Note the 's' in the table name
+                    db.execute(f'DELETE FROM {table_name} WHERE {column_id} = ?', (record_id,))
                     db.commit()
                     flash(f'{entity.capitalize()} deleted successfully!', 'success')
                 except (sqlite3.IntegrityError, KeyError):
                     flash(f'Error: Cannot delete {entity} because it is in use by another record.', 'error')
-            return redirect(url_for('manage'))
+
+
 
     teachers = cur.execute('SELECT * FROM teachers').fetchall()
     subjects = cur.execute('SELECT * FROM subjects').fetchall()
