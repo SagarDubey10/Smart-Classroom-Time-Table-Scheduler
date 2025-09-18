@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, g, redirect, url_for, flash
+from flask import Flask, render_template, request, jsonify, g, redirect, url_for, flash, get_flashed_messages
 import sqlite3
 from datetime import datetime, timedelta
 import random
@@ -320,7 +320,6 @@ def manage():
     cur = db.cursor()
 
     if request.method == 'POST':
-        # Check which form was submitted using a hidden input field
         form_name = request.form.get('form_name')
         if form_name == 'add_teacher_form':
             name = request.form['teacher_name']
@@ -404,26 +403,31 @@ def manage():
         elif form_name.startswith('delete_'):
             entity = form_name.replace('delete_', '').replace('_form', '')
             id_map = {
-                'teacher': ('teachers', 'teacher_id'),
-                'subject': ('subjects', 'subject_id'),
-                'class': ('classes', 'class_id'),
-                'classroom': ('classrooms', 'classroom_id'),
-                'course': ('courses', 'course_id')
+                'teacher': 'teacher_id',
+                'subject': 'subject_id',
+                'class': 'class_id',
+                'classroom': 'classroom_id',
+                'course': 'course_id'
             }
-            table_info = id_map.get(entity)
-            if table_info:
-                table_name, column_id = table_info
+            column_id = id_map.get(entity)
+            if column_id:
                 try:
                     record_id = request.form[f'{entity}_id']
+                    
+                    if entity == 'class':
+                        table_name = 'classes'
+                    else:
+                        table_name = f'{entity}s'
+
                     db.execute(f'DELETE FROM {table_name} WHERE {column_id} = ?', (record_id,))
                     db.commit()
                     flash(f'{entity.capitalize()} deleted successfully!', 'success')
                 except (sqlite3.IntegrityError, KeyError):
                     flash(f'Error: Cannot delete {entity} because it is in use by another record.', 'error')
+            return redirect(url_for('manage'))
 
 
-
-    teachers = cur.execute('SELECT * FROM teachers').fetchall()
+    teachers = cur.execute('SELECT teachers.*, teacher_preferences.preference FROM teachers LEFT JOIN teacher_preferences ON teachers.teacher_id = teacher_preferences.teacher_id').fetchall()
     subjects = cur.execute('SELECT * FROM subjects').fetchall()
     classes = cur.execute('SELECT * FROM classes').fetchall()
     classrooms = cur.execute('SELECT * FROM classrooms').fetchall()
@@ -436,7 +440,7 @@ def manage():
     ''').fetchall()
     schedule_config = get_slot_times()
     
-    return render_template('manage.html', teachers=teachers, subjects=subjects, classes=classes, classrooms=classrooms, courses=courses, schedule_config=schedule_config)
+    return render_template('manage.html', teachers=teachers, subjects=subjects, classes=classes, classrooms=classrooms, courses=courses, schedule_config=schedule_config, messages=get_flashed_messages(with_categories=True))
 
 @app.route('/api/timetable/generate', methods=['POST'])
 def api_generate():
@@ -485,7 +489,7 @@ def api_get_timetable(class_name):
             if i < len(SLOTS) and not SLOTS[i]['is_break']:
                 grid[slot['day']][SLOTS[i]['start_time']] = dict(slot)
             
-    cur.execute('SELECT teacher_id, name FROM teachers')
+    cur.execute('SELECT teachers.teacher_id, teachers.name, teacher_preferences.preference FROM teachers LEFT JOIN teacher_preferences ON teachers.teacher_id = teacher_preferences.teacher_id')
     teachers = [dict(row) for row in cur.fetchall()]
     cur.execute('SELECT subject_id, name, code FROM subjects')
     subjects = [dict(row) for row in cur.fetchall()]
@@ -503,6 +507,61 @@ def api_get_timetable(class_name):
         'slots_full': [dict(s) for s in SLOTS],
         'options': {'teachers': teachers, 'subjects': subjects, 'classrooms': classrooms, 'courses': courses, 'classes': classes}
     })
+
+@app.route('/api/timetable/update', methods=['POST'])
+def api_update():
+    data = request.json
+    slot_id = data.get('slot_id')
+    
+    if not data['teacher_id'] and not data['subject_id'] and not data['classroom_id']:
+        if slot_id:
+            db = get_db()
+            db.execute('DELETE FROM timetable_slots WHERE slot_id = ?', (slot_id,))
+            db.commit()
+            return jsonify({'status': 'success', 'message': 'Slot cleared successfully.'})
+        return jsonify({'status': 'error', 'message': 'Invalid update request.'}), 400
+
+    db = get_db()
+    cur = db.cursor()
+    
+    cur.execute('SELECT course_id, is_lab FROM courses WHERE subject_id = ? AND teacher_id = ? AND class_id = ?', 
+                (data['subject_id'], data['teacher_id'], data['class_id']))
+    course = cur.fetchone()
+
+    if not course:
+        return jsonify({'status': 'error', 'message': 'This teacher is not assigned to teach this subject for this class.'}), 400
+
+    course_id = course['course_id']
+    
+    valid, message = validate_change(
+        slot_id, 
+        data['day'], 
+        data['time_start'], 
+        data['time_end'], 
+        data['teacher_id'], 
+        data['classroom_id'],
+        data['class_id']
+    )
+
+    if not valid:
+        return jsonify({'status': 'error', 'message': message}), 400
+
+    try:
+        if slot_id:
+            cur.execute('''
+                UPDATE timetable_slots 
+                SET day = ?, time_start = ?, time_end = ?, teacher_id = ?, classroom_id = ?, course_id = ?
+                WHERE slot_id = ?
+            ''', (data['day'], data['time_start'], data['time_end'], data['teacher_id'], data['classroom_id'], course_id, slot_id))
+        else:
+            cur.execute('''
+                INSERT INTO timetable_slots (class_id, day, time_start, time_end, teacher_id, classroom_id, course_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (data['class_id'], data['day'], data['time_start'], data['time_end'], data['teacher_id'], data['classroom_id'], course_id))
+        db.commit()
+        return jsonify({'status': 'success', 'message': 'Timetable updated successfully.'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 if __name__ == '__main__':
     with app.app_context():
