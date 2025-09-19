@@ -1,17 +1,18 @@
 /* New Color Palette and Fonts */
 :root {
-    --light-gray: #f0f2f5;
-    --dark-text: #4a4a4a;
-    --card-background: #ffffff;
-    --accent-blue: #007bff;
-    --accent-orange: #ff6f00;
-    --border-color: #e0e0e0;
+    --light-gray-bg: #f5f7fa;
+    --card-bg: #ffffff;
+    --text-dark: #333333;
+    --border-light: #e0e0e0;
+    --primary-blue: #007bff;
+    --secondary-gray: #6c757d;
+    --danger-red: #dc3545;
 }
 
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background-color: var(--light-gray);
-    color: var(--dark-text);
+    background-color: var(--light-gray-bg);
+    color: var(--text-dark);
 }
 
 .container-fluid {
@@ -20,21 +21,21 @@ body {
 
 /* Header & Main Containers */
 .main-header {
-    background-color: var(--card-background);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    border-bottom: 1px solid var(--border-color);
+    background-color: var(--card-bg);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    border-bottom: 1px solid var(--border-light);
     padding: 1.5rem;
 }
 
 h1.main-title {
-    color: var(--dark-text);
+    color: var(--text-dark);
     font-weight: 600;
     margin: 0;
 }
 
 .card {
-    background-color: var(--card-background);
-    border: 1px solid var(--border-color);
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-light);
     border-radius: 10px;
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
     margin-top: 20px;
@@ -45,9 +46,9 @@ h1.main-title {
 .form-control,
 .form-select {
     border-radius: 8px;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--border-light);
     background-color: #f9f9f9;
-    color: var(--dark-text);
+    color: var(--text-dark);
     box-shadow: none;
     transition: border-color 0.2s ease;
 }
@@ -58,7 +59,7 @@ h1.main-title {
 
 .form-control:focus,
 .form-select:focus {
-    border-color: var(--accent-blue);
+    border-color: var(--primary-blue);
     box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
     background-color: #fff;
 }
@@ -71,8 +72,8 @@ h1.main-title {
 }
 
 .btn-primary {
-    background-color: var(--accent-blue);
-    border-color: var(--accent-blue);
+    background-color: var(--primary-blue);
+    border-color: var(--primary-blue);
 }
 
 .btn-primary:hover {
@@ -81,8 +82,8 @@ h1.main-title {
 }
 
 .btn-secondary {
-    background-color: #6c757d;
-    border-color: #6c757d;
+    background-color: var(--secondary-gray);
+    border-color: var(--secondary-gray);
 }
 
 .btn-secondary:hover {
@@ -91,40 +92,42 @@ h1.main-title {
 }
 
 .btn-danger {
-    background-color: var(--accent-orange);
-    border-color: var(--accent-orange);
+    background-color: var(--danger-red);
+    border-color: var(--danger-red);
 }
 
 .btn-danger:hover {
-    background-color: #e66200;
-    border-color: #cc5800;
+    background-color: #c82333;
+    border-color: #bd2130;
 }
 
-/* Table Styling */
+/* Timetable Table Styling */
 .timetable-table {
     width: 100%;
     border-collapse: separate;
     border-spacing: 0;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--border-light);
     border-radius: 10px;
     overflow: hidden;
-    background-color: var(--card-background);
+    background-color: var(--card-bg);
 }
 
 .timetable-table thead th {
-    background-color: #f9f9f9;
+    background-color: #f1f1f1;
     font-weight: 600;
-    color: var(--dark-text);
-    border: 1px solid var(--border-color);
+    color: var(--text-dark);
+    border: 1px solid var(--border-light);
     padding: 1rem;
 }
 
 .timetable-table tbody td {
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--border-light);
     padding: 1rem;
     position: relative;
     text-align: center;
     vertical-align: middle;
+    background-color: var(--card-bg);
+    color: var(--text-dark);
 }
 
 /* Cell Contents */
@@ -138,28 +141,28 @@ h1.main-title {
 
 .cell-content:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
 }
 
-/* Subject-specific colors based on screenshot */
+/* Subject-specific colors */
 .subject-math {
-    background-color: #e0f2f1;
-    color: #00796b;
+    background-color: #e3f2fd;
+    color: #1976d2;
 }
 
 .subject-physics {
-    background-color: #ffecb3;
-    color: #ffa000;
+    background-color: #fff3e0;
+    color: #ff9800;
 }
 
 .subject-biology {
-    background-color: #c8e6c9;
+    background-color: #e8f5e9;
     color: #388e3c;
 }
 
 .subject-chemistry {
-    background-color: #e3f2fd;
-    color: #1976d2;
+    background-color: #fce4ec;
+    color: #ad1457;
 }
 
 .subject-history {
@@ -168,8 +171,8 @@ h1.main-title {
 }
 
 .subject-data {
-    background-color: #fce4ec;
-    color: #ad1457;
+    background-color: #e1f5fe;
+    color: #0277bd;
 }
 
 .subject-operating {
@@ -178,24 +181,24 @@ h1.main-title {
 }
 
 .subject-programming {
-    background-color: #fff8e1;
-    color: #f57f17;
+    background-color: #d1c4e9;
+    color: #512da8;
 }
 
 .subject-networks {
-    background-color: #e1f5fe;
-    color: #0277bd;
+    background-color: #ffcdd2;
+    color: #c62828;
 }
 
 .subject-database {
-    background-color: #efebe9;
-    color: #5d4037;
+    background-color: #c8e6c9;
+    color: #689f38;
 }
 
 
 .break-slot {
-    background-color: var(--light-gray);
-    color: var(--dark-text);
+    background-color: #f1f1f1;
+    color: var(--text-dark);
     font-weight: bold;
 }
 
@@ -203,8 +206,8 @@ h1.main-title {
     color: #a0a0a0;
     font-style: italic;
     cursor: pointer;
-    background-color: var(--card-background);
-    border: 1px solid var(--border-color);
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-light);
 }
 
 .empty-slot:hover {
@@ -218,7 +221,7 @@ h1.main-title {
 .h4,
 .h5,
 .h6 {
-    color: var(--dark-text);
+    color: var(--text-dark);
 }
 
 .table-responsive {

@@ -1,12 +1,7 @@
-from flask import Flask, render_template, request, jsonify, g, redirect, url_for, flash, get_flashed_messages
+from flask import Flask, render_template, request, jsonify, g, redirect, url_for, flash
 import sqlite3
 from datetime import datetime, timedelta
 import random
-from reportlab.lib.pagesizes import A4, landscape
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet
-import io
 
 app = Flask(__name__)
 DB_PATH = 'timetable.db'
@@ -82,7 +77,7 @@ def init_db():
                 FOREIGN KEY (classroom_id) REFERENCES classrooms(classroom_id)
             );
             CREATE TABLE IF NOT EXISTS schedule_config (
-                config_id INTEGER PRIMARY KEY,
+                config_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 is_break INTEGER,
                 start_time TEXT,
                 end_time TEXT,
@@ -102,21 +97,20 @@ def seed_sample_data():
         DELETE FROM classes;
         DELETE FROM teacher_preferences;
         DELETE FROM teachers;
+        DELETE FROM schedule_config;
     ''')
     
-    cur.execute('SELECT COUNT(*) FROM schedule_config')
-    if cur.fetchone()[0] == 0:
-        config = [
-            (1, 0, '10:30 AM', '11:30 AM', None),
-            (2, 0, '11:30 AM', '12:30 PM', None),
-            (3, 0, '12:30 PM', '01:30 PM', None),
-            (4, 1, '01:30 PM', '02:15 PM', 'Lunch Break'),
-            (5, 0, '02:15 PM', '03:15 PM', None),
-            (6, 1, '03:15 PM', '03:30 PM', 'Short Break'),
-            (7, 0, '03:30 PM', '04:30 PM', None),
-            (8, 0, '04:30 PM', '05:30 PM', None)
-        ]
-        cur.executemany('INSERT INTO schedule_config (config_id, is_break, start_time, end_time, break_name) VALUES (?, ?, ?, ?, ?)', config)
+    config = [
+        (0, '10:30 AM', '11:30 AM', None),
+        (0, '11:30 AM', '12:30 PM', None),
+        (0, '12:30 PM', '01:30 PM', None),
+        (1, '01:30 PM', '02:15 PM', 'Lunch Break'),
+        (0, '02:15 PM', '03:15 PM', None),
+        (1, '03:15 PM', '03:30 PM', 'Short Break'),
+        (0, '03:30 PM', '04:30 PM', None),
+        (0, '04:30 PM', '05:30 PM', None)
+    ]
+    cur.executemany('INSERT INTO schedule_config (is_break, start_time, end_time, break_name) VALUES (?, ?, ?, ?)', config)
     
     teachers = [('Prof. Ghule',), ('Prof. Bhosle',), ('Prof. Pingle',), ('Dr. Deshmukh',), ('Ms. Shaikh',)]
     cur.executemany('INSERT INTO teachers (name) VALUES (?)', teachers)
@@ -152,7 +146,7 @@ def seed_sample_data():
 def get_slot_times():
     db = get_db()
     cur = db.cursor()
-    cur.execute('SELECT start_time, end_time, is_break, break_name FROM schedule_config ORDER BY config_id')
+    cur.execute('SELECT * FROM schedule_config ORDER BY config_id')
     return cur.fetchall()
 
 def generate_timetable():
@@ -268,16 +262,8 @@ def validate_change(slot_id, day, time_start, time_end, teacher_id, classroom_id
     db = get_db()
     cur = db.cursor()
     
-    cur.execute('SELECT is_lab FROM courses WHERE subject_id IN (SELECT subject_id FROM timetable_slots WHERE slot_id = ?)', (slot_id,))
-    is_lab_row = cur.fetchone()
-    is_lab = is_lab_row['is_lab'] if is_lab_row else 0
-    if not is_lab:
-        cur.execute('SELECT 1 FROM timetable_slots ts JOIN courses co ON ts.course_id = co.course_id WHERE ts.day = ? AND ts.class_id = ? AND co.is_lab = 0 AND ts.slot_id != ?', (day, class_id, slot_id))
-        if cur.fetchone():
-            return False, 'Error: Only one theory lecture per day for this class is allowed.'
-
-    query = 'SELECT teacher_id FROM timetable_slots WHERE day = ? AND NOT (time_end <= ? OR time_start >= ?) AND teacher_id = ?'
-    params = (day, time_start, time_end, teacher_id)
+    query = 'SELECT 1 FROM timetable_slots WHERE teacher_id = ? AND day = ? AND NOT (? >= time_end OR ? <= time_start)'
+    params = (teacher_id, day, time_start, time_end)
     if slot_id:
         query += ' AND slot_id != ?'
         params += (slot_id,)
@@ -285,8 +271,8 @@ def validate_change(slot_id, day, time_start, time_end, teacher_id, classroom_id
     if cur.fetchone():
         return False, 'Error: The selected teacher is already assigned to another class at this time.'
 
-    query = 'SELECT classroom_id FROM timetable_slots WHERE day = ? AND NOT (time_end <= ? OR time_start >= ?) AND classroom_id = ?'
-    params = (day, time_start, time_end, classroom_id)
+    query = 'SELECT 1 FROM timetable_slots WHERE classroom_id = ? AND day = ? AND NOT (? >= time_end OR ? <= time_start)'
+    params = (classroom_id, day, time_start, time_end)
     if slot_id:
         query += ' AND slot_id != ?'
         params += (slot_id,)
@@ -294,8 +280,8 @@ def validate_change(slot_id, day, time_start, time_end, teacher_id, classroom_id
     if cur.fetchone():
         return False, 'Error: The selected classroom is already occupied at this time.'
 
-    query = 'SELECT class_id FROM timetable_slots WHERE day = ? AND NOT (time_end <= ? OR time_start >= ?) AND class_id = ?'
-    params = (day, time_start, time_end, class_id)
+    query = 'SELECT 1 FROM timetable_slots WHERE class_id = ? AND day = ? AND NOT (? >= time_end OR ? <= time_start)'
+    params = (class_id, day, time_start, time_end)
     if slot_id:
         query += ' AND slot_id != ?'
         params += (slot_id,)
@@ -386,18 +372,38 @@ def manage():
             end_times = request.form.getlist('end_time')
             is_breaks = request.form.getlist('is_break')
             break_names = request.form.getlist('break_name')
+            config_ids = request.form.getlist('config_id')
             
-            slots_data = []
-            for i in range(len(start_times)):
-                is_break_val = int(is_breaks[i])
-                break_name_val = break_names[i] if break_names[i] else None
-                slots_data.append((i + 1, is_break_val, start_times[i], end_times[i], break_name_val))
-            
-            cur.execute('DELETE FROM schedule_config')
-            cur.executemany('INSERT INTO schedule_config (config_id, is_break, start_time, end_time, break_name) VALUES (?, ?, ?, ?, ?)', slots_data)
-            db.commit()
-            
-            flash('Schedule configuration saved successfully!', 'success')
+            db.execute('BEGIN TRANSACTION')
+            try:
+                # Delete removed slots
+                current_ids = {int(i) for i in db.execute('SELECT config_id FROM schedule_config').fetchall()}
+                submitted_ids = {int(i) for i in config_ids if i}
+                ids_to_delete = current_ids - submitted_ids
+                
+                if ids_to_delete:
+                    db.execute(f'DELETE FROM schedule_config WHERE config_id IN ({",".join("?"*len(ids_to_delete))})', list(ids_to_delete))
+                
+                # Update existing and insert new slots
+                for i in range(len(start_times)):
+                    config_id = config_ids[i]
+                    is_break = int(is_breaks[i])
+                    start_time = start_times[i]
+                    end_time = end_times[i]
+                    break_name = break_names[i] if break_names[i] else None
+
+                    if config_id: # Update existing
+                        db.execute('UPDATE schedule_config SET is_break=?, start_time=?, end_time=?, break_name=? WHERE config_id=?',
+                                   (is_break, start_time, end_time, break_name, config_id))
+                    else: # Insert new
+                        db.execute('INSERT INTO schedule_config (is_break, start_time, end_time, break_name) VALUES (?, ?, ?, ?)',
+                                   (is_break, start_time, end_time, break_name))
+                
+                db.commit()
+                flash('Schedule configuration saved successfully!', 'success')
+            except Exception as e:
+                db.rollback()
+                flash(f'Error saving schedule: {e}', 'error')
             return redirect(url_for('manage'))
 
         elif form_name.startswith('delete_'):
@@ -426,7 +432,6 @@ def manage():
                     flash(f'Error: Cannot delete {entity} because it is in use by another record.', 'error')
             return redirect(url_for('manage'))
 
-
     teachers = cur.execute('SELECT teachers.*, teacher_preferences.preference FROM teachers LEFT JOIN teacher_preferences ON teachers.teacher_id = teacher_preferences.teacher_id').fetchall()
     subjects = cur.execute('SELECT * FROM subjects').fetchall()
     classes = cur.execute('SELECT * FROM classes').fetchall()
@@ -440,7 +445,7 @@ def manage():
     ''').fetchall()
     schedule_config = get_slot_times()
     
-    return render_template('manage.html', teachers=teachers, subjects=subjects, classes=classes, classrooms=classrooms, courses=courses, schedule_config=schedule_config, messages=get_flashed_messages(with_categories=True))
+    return render_template('manage.html', teachers=teachers, subjects=subjects, classes=classes, classrooms=classrooms, courses=courses, schedule_config=schedule_config, messages=flash)
 
 @app.route('/api/timetable/generate', methods=['POST'])
 def api_generate():
@@ -513,14 +518,6 @@ def api_update():
     data = request.json
     slot_id = data.get('slot_id')
     
-    if not data['teacher_id'] and not data['subject_id'] and not data['classroom_id']:
-        if slot_id:
-            db = get_db()
-            db.execute('DELETE FROM timetable_slots WHERE slot_id = ?', (slot_id,))
-            db.commit()
-            return jsonify({'status': 'success', 'message': 'Slot cleared successfully.'})
-        return jsonify({'status': 'error', 'message': 'Invalid update request.'}), 400
-
     db = get_db()
     cur = db.cursor()
     
@@ -560,6 +557,26 @@ def api_update():
             ''', (data['class_id'], data['day'], data['time_start'], data['time_end'], data['teacher_id'], data['classroom_id'], course_id))
         db.commit()
         return jsonify({'status': 'success', 'message': 'Timetable updated successfully.'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/timetable/delete', methods=['POST'])
+def api_delete():
+    data = request.json
+    slot_id = data.get('slot_id')
+
+    if not slot_id:
+        return jsonify({'status': 'error', 'message': 'Invalid slot ID provided.'}), 400
+
+    db = get_db()
+    cur = db.cursor()
+
+    try:
+        cur.execute('DELETE FROM timetable_slots WHERE slot_id = ?', (slot_id,))
+        db.commit()
+        if cur.rowcount == 0:
+            return jsonify({'status': 'error', 'message': 'Slot not found.'}), 404
+        return jsonify({'status': 'success', 'message': 'Slot deleted successfully.'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 

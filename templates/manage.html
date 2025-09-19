@@ -14,7 +14,6 @@
         <a href="{{ url_for('index') }}" class="btn btn-secondary">View Timetables</a>
     </div>
 
-    <!-- The Flash Message Block -->
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
             <div class="alert-container">
@@ -27,7 +26,6 @@
         {% endif %}
     {% endwith %}
 
-    <!-- Schedule Configuration -->
     <div class="card p-3 mb-4">
         <h2 class="h2">Schedule Configuration</h2>
         <p class="text-secondary">Define the time slots for lectures and breaks. The timetable will be generated based on this configuration.</p>
@@ -36,6 +34,7 @@
             <div id="slotInputs">
                 {% for slot in schedule_config %}
                     <div class="input-group mb-2">
+                        <input type="hidden" name="config_id" value="{{ slot.config_id }}">
                         <input type="time" class="form-control" name="start_time" value="{{ slot.start_time }}" required>
                         <input type="time" class="form-control" name="end_time" value="{{ slot.end_time }}" required>
                         <select class="form-control" name="is_break">
@@ -53,7 +52,6 @@
     </div>
 
     <div class="row">
-        <!-- Add Teacher -->
         <div class="col-md-6 mb-4">
             <div class="card p-3 h-100">
                 <h2 class="h2">Add Teacher</h2>
@@ -96,7 +94,6 @@
             </div>
         </div>
         
-        <!-- Add Subject -->
         <div class="col-md-6 mb-4">
             <div class="card p-3 h-100">
                 <h2 class="h2">Add Subject</h2>
@@ -137,7 +134,6 @@
     </div>
 
     <div class="row">
-        <!-- Add Class and Classroom -->
         <div class="col-md-6 mb-4">
             <div class="card p-3 h-100">
                 <h2 class="h2">Add Class & Classroom</h2>
@@ -265,6 +261,54 @@
                         </tbody>
                     </table>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="editSlotModal" tabindex="-1" aria-labelledby="editSlotModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editSlotModalLabel">Edit Slot</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editSlotForm">
+                    <div class="mb-3">
+                        <label for="modalDay" class="form-label">Day</label>
+                        <input type="text" class="form-control" id="modalDay" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label for="modalTime" class="form-label">Time</label>
+                        <input type="text" class="form-control" id="modalTime" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label for="modalSubject" class="form-label">Subject</label>
+                        <select class="form-control" id="modalSubject">
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="modalTeacher" class="form-label">Teacher</label>
+                        <select class="form-control" id="modalTeacher">
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="modalClassroom" class="form-label">Classroom</label>
+                        <select class="form-control" id="modalClassroom">
+                        </select>
+                    </div>
+                    <div id="validation-alert" class="alert alert-danger d-none"></div>
+                    <input type="hidden" id="modalSlotId">
+                    <input type="hidden" id="modalClassId">
+                    <input type="hidden" id="modalStartTime">
+                    <input type="hidden" id="modalEndTime">
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-danger" id="deleteSlotBtn">Delete Slot</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="saveSlotBtn">Save Changes</button>
             </div>
         </div>
     </div>
