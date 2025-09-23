@@ -526,7 +526,7 @@ def manage():
     ''').fetchall()
     
     # Fetch existing batch-teacher assignments
-    batch_assignments = defaultdict(lambda: defaultdict(int))
+    batch_assignments = defaultdict(lambda: defaultdict(dict))
     assignments = cur.execute('''
         SELECT b.*, t.name as teacher_name 
         FROM batch_teacher_assignments b 
