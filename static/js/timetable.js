@@ -95,15 +95,22 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <tr>
                                     <td>${timeFormatted}</td>
                                     ${data.days.map(day => {
-        const cellData = data.grid[day][slotStart];
-        if (cellData) {
-          return `
-                                                <td style="background-color: #fff !important; color: #000 !important;">
-                                                    <strong>${cellData.subject_name}</strong><br>
-                                                    <small>${cellData.teacher_name}</small><br>
-                                                    <small>@${cellData.classroom_name}</small>
-                                                </td>
-                                            `;
+        const cellDataArray = data.grid[day][slotStart];
+        if (cellDataArray && cellDataArray.length > 0) {
+          return `<td style="background-color: #fff !important; color: #000 !important;">
+                ${cellDataArray.map(cellData => {
+            let batch_info = '';
+            if (cellData.is_lab && cellData.batch_number) {
+              batch_info = `<br><small>Batch ${cellData.batch_number}</small>`;
+            }
+            return `<div>
+                                <strong>${cellData.subject_name}</strong><br>
+                                <small>${cellData.teacher_name}</small><br>
+                                <small>@${cellData.classroom_name}</small>
+                                ${batch_info}
+                            </div>`;
+          }).join('<hr>')}
+            </td>`;
         } else {
           return `
                                                 <td style="background-color: #fff !important; color: #000 !important;" class="empty-slot"></td>
@@ -165,16 +172,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (confirm('Are you sure you want to clear this slot?')) {
       const payload = {
         slot_id: modalSlotId.value,
-        day: modalDay.value,
-        time_start: modalStartTime.value,
-        time_end: modalEndTime.value,
-        class_id: modalClassId.value,
-        teacher_id: null,
-        subject_id: null,
-        classroom_id: null
       };
 
-      const res = await fetch('/api/timetable/update', {
+      const res = await fetch('/api/timetable/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -232,25 +232,38 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <tr>
                                     <td>${timeFormatted}</td>
                                     ${data.days.map(day => {
-        const cellData = data.grid[day][slotStart];
-        if (cellData) {
+        const cellDataArray = data.grid[day][slotStart];
+        if (cellDataArray && cellDataArray.length > 0) {
           return `
-                                                <td class="${cellData.is_lab ? 'lab-session' : 'theory-session'}" 
-                                                    data-day="${day}" 
-                                                    data-time="${slotStart}" 
-                                                    data-class-id="${classId}"
-                                                    data-slot-id="${cellData.slot_id}"
-                                                    data-course-id="${cellData.course_id}"
-                                                    data-subject-id="${cellData.subject_id}"
-                                                    data-teacher-id="${cellData.teacher_id}"
-                                                    data-classroom-id="${cellData.classroom_id}"
-                                                    data-bs-toggle="modal" 
-                                                    data-bs-target="#editSlotModal">
-                                                    <strong>${cellData.subject_name}</strong><br>
-                                                    <small>${cellData.teacher_name}</small><br>
-                                                    <small class="text-muted">@${cellData.classroom_name}</small>
-                                                </td>
-                                            `;
+                <td class="has-content">
+                    ${cellDataArray.map(cellData => {
+            let batch_info = '';
+            if (cellData.is_lab && cellData.batch_number) {
+              batch_info = `<br><small class="text-info">Batch ${cellData.batch_number}</small>`;
+            }
+            return `
+                            <div class="${cellData.is_lab ? 'lab-session' : 'theory-session'}"
+                                data-day="${day}" 
+                                data-time="${slotStart}" 
+                                data-class-id="${classId}"
+                                data-slot-id="${cellData.slot_id}"
+                                data-course-id="${cellData.course_id}"
+                                data-subject-id="${cellData.subject_id}"
+                                data-teacher-id="${cellData.teacher_id}"
+                                data-classroom-id="${cellData.classroom_id}"
+                                data-bs-toggle="modal" 
+                                data-bs-target="#editSlotModal"
+                                style="cursor: pointer; padding: 5px; margin-bottom: 5px; border-radius: 5px;"
+                            >
+                                <strong>${cellData.subject_name}</strong><br>
+                                <small>${cellData.teacher_name}</small><br>
+                                <small class="text-muted">@${cellData.classroom_name}</small>
+                                ${batch_info}
+                            </div>
+                        `;
+          }).join('')}
+                </td>
+            `;
         } else {
           return `
                                                 <td class="empty-slot" 
@@ -275,15 +288,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.querySelectorAll('.timetable-table td').forEach(cell => {
       cell.addEventListener('click', (e) => {
-        const day = e.target.dataset.day;
-        const time = e.target.dataset.time;
+        const targetElement = e.target.closest('div[data-day], td[data-day]');
+
+        const day = targetElement.dataset.day;
+        const time = targetElement.dataset.time;
         if (!day || !time) return;
 
-        const slotId = e.target.dataset.slotId || '';
-        const subjectId = e.target.dataset.subjectId || '';
-        const teacherId = e.target.dataset.teacherId || '';
-        const classroomId = e.target.dataset.classroomId || '';
-        const classId = e.target.dataset.classId;
+        const slotId = targetElement.dataset.slotId || '';
+        const subjectId = targetElement.dataset.subjectId || '';
+        const teacherId = targetElement.dataset.teacherId || '';
+        const classroomId = targetElement.dataset.classroomId || '';
+        const classId = targetElement.dataset.classId;
 
         modalDay.value = day;
         modalTime.value = time;

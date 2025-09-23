@@ -46,7 +46,8 @@ def add_class():
     data = request.json
     db = get_db()
     try:
-        db.execute('INSERT INTO classes (name) VALUES (?)', (data['name'],))
+        num_batches = data.get('num_batches', 1)
+        db.execute('INSERT INTO classes (name, num_batches) VALUES (?, ?)', (data['name'], num_batches))
         db.commit()
         flash('Class added successfully!', 'success')
         return jsonify({'status': 'success', 'message': 'Class added successfully!'})

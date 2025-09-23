@@ -26,6 +26,17 @@
         {% endif %}
     {% endwith %}
 
+    {% if warnings %}
+        <div class="alert alert-warning">
+            <h4 class="alert-heading">Validation Warnings</h4>
+            <ul>
+                {% for warning in warnings %}
+                    <li>{{ warning }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+    {% endif %}
+
     <div class="card p-3 mb-4">
         <h2 class="h2">Schedule Configuration</h2>
         <p class="text-secondary">Define the time slots for lectures and breaks. The timetable will be generated based on this configuration.</p>
@@ -143,17 +154,19 @@
                         <form id="addClassForm" action="{{ url_for('manage') }}" method="post" onsubmit="return confirm('Are you sure you want to add this class?');">
                             <input type="hidden" name="form_name" value="add_class_form">
                             <input type="text" id="className" name="class_name" class="form-control" placeholder="Class Name (e.g., TE-B1)" required>
+                            <input type="number" id="numBatches" name="num_batches" class="form-control mt-2" placeholder="Number of Batches" min="1" value="1" required>
                             <button type="submit" class="btn btn-primary mt-2">Add Class</button>
                         </form>
                         <h5 class="h5 mt-3">Existing Classes</h5>
                         <div class="table-responsive">
                             <table class="table table-sm">
-                                <thead><tr><th>ID</th><th>Name</th><th>Action</th></tr></thead>
+                                <thead><tr><th>ID</th><th>Name</th><th>Batches</th><th>Action</th></tr></thead>
                                 <tbody>
                                     {% for class_obj in classes %}
                                     <tr>
                                         <td>{{ class_obj.class_id }}</td>
                                         <td>{{ class_obj.name }}</td>
+                                        <td>{{ class_obj.num_batches }}</td>
                                         <td>
                                             <form action="{{ url_for('manage') }}" method="post" onsubmit="return confirm('Are you sure you want to delete this class?');">
                                                 <input type="hidden" name="form_name" value="delete_class_form">
@@ -264,57 +277,90 @@
             </div>
         </div>
     </div>
-</div>
-
-<div class="modal fade" id="editSlotModal" tabindex="-1" aria-labelledby="editSlotModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="editSlotModalLabel">Edit Slot</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+    <div class="card p-3 mb-4">
+        <h2 class="h2">Batch-Teacher Assignments (for Practicals)</h2>
+        <form id="batchTeacherForm" action="{{ url_for('manage') }}" method="post">
+            <input type="hidden" name="form_name" value="batch_teacher_form">
+            <div class="row">
+                <div class="col-md-4">
+                    <select id="batchClassSelect" name="class_id" class="form-select" required>
+                        <option value="">Select Class</option>
+                        {% for c in classes %}{% if c.num_batches > 1 %}<option value="{{ c.class_id }}" data-batches="{{ c.num_batches }}">{{ c.name }}</option>{% endif %}{% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <select id="batchSubjectSelect" name="subject_id" class="form-select" required>
+                        <option value="">Select Practical Subject</option>
+                        {% for course in courses %}{% if course.is_lab %}<option class="subject-option" value="{{ course.subject_id }}" data-class="{{ course.class_id }}" style="display:none;">{{ course.subject_name }}</option>{% endif %}{% endfor %}
+                    </select>
+                </div>
             </div>
-            <div class="modal-body">
-                <form id="editSlotForm">
-                    <div class="mb-3">
-                        <label for="modalDay" class="form-label">Day</label>
-                        <input type="text" class="form-control" id="modalDay" readonly>
-                    </div>
-                    <div class="mb-3">
-                        <label for="modalTime" class="form-label">Time</label>
-                        <input type="text" class="form-control" id="modalTime" readonly>
-                    </div>
-                    <div class="mb-3">
-                        <label for="modalSubject" class="form-label">Subject</label>
-                        <select class="form-control" id="modalSubject">
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label for="modalTeacher" class="form-label">Teacher</label>
-                        <select class="form-control" id="modalTeacher">
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label for="modalClassroom" class="form-label">Classroom</label>
-                        <select class="form-control" id="modalClassroom">
-                        </select>
-                    </div>
-                    <div id="validation-alert" class="alert alert-danger d-none"></div>
-                    <input type="hidden" id="modalSlotId">
-                    <input type="hidden" id="modalClassId">
-                    <input type="hidden" id="modalStartTime">
-                    <input type="hidden" id="modalEndTime">
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-danger" id="deleteSlotBtn">Delete Slot</button>
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-primary" id="saveSlotBtn">Save Changes</button>
-            </div>
-        </div>
+            <div id="batchTeacherInputs" class="mt-3">
+                </div>
+            <button type="submit" class="btn btn-primary mt-3" style="display:none;">Save Batch Assignments</button>
+        </form>
     </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const classSelect = document.getElementById('batchClassSelect');
+    const subjectSelect = document.getElementById('batchSubjectSelect');
+    const teacherInputsContainer = document.getElementById('batchTeacherInputs');
+    const saveButton = document.querySelector('#batchTeacherForm button[type="submit"]');
+
+    classSelect.addEventListener('change', function() {
+        const selectedClassId = this.value;
+        const subjectOptions = subjectSelect.querySelectorAll('.subject-option');
+        
+        // Reset subject select
+        subjectSelect.value = '';
+        teacherInputsContainer.innerHTML = '';
+        saveButton.style.display = 'none';
+
+        // Filter subjects based on selected class
+        subjectOptions.forEach(opt => {
+            if (opt.dataset.class === selectedClassId) {
+                opt.style.display = 'block';
+            } else {
+                opt.style.display = 'none';
+            }
+        });
+    });
+
+    subjectSelect.addEventListener('change', function() {
+        const selectedClassOption = classSelect.options[classSelect.selectedIndex];
+        const numBatches = parseInt(selectedClassOption.dataset.batches, 10);
+        const selectedClassId = classSelect.value;
+        const selectedSubjectId = this.value;
+        
+        teacherInputsContainer.innerHTML = ''; // Clear previous inputs
+
+        if (numBatches > 1 && selectedClassId && selectedSubjectId) {
+            for (let i = 1; i <= numBatches; i++) {
+                const div = document.createElement('div');
+                div.classList.add('mb-2', 'row');
+                div.innerHTML = `
+                    <label class="col-sm-2 col-form-label">Batch ${i} Teacher:</label>
+                    <div class="col-sm-10">
+                        <select name="teacher_batch_${i}" class="form-select">
+                            <option value="">Select Teacher</option>
+                            {% for teacher in teachers %}
+                            <option value="{{ teacher.teacher_id }}">{{ teacher.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                `;
+                teacherInputsContainer.appendChild(div);
+            }
+            saveButton.style.display = 'block';
+        } else {
+            saveButton.style.display = 'none';
+        }
+    });
+});
+</script>
 <script src="{{ url_for('static', filename='js/manage.js') }}"></script>
 </body>
 </html>
