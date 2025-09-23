@@ -154,7 +154,19 @@
                         <form id="addClassForm" action="{{ url_for('manage') }}" method="post" onsubmit="return confirm('Are you sure you want to add this class?');">
                             <input type="hidden" name="form_name" value="add_class_form">
                             <input type="text" id="className" name="class_name" class="form-control" placeholder="Class Name (e.g., TE-B1)" required>
-                            <input type="number" id="numBatches" name="num_batches" class="form-control mt-2" placeholder="Number of Batches" min="1" value="1" required>
+                            
+                            <!-- Updated Number of Batches input -->
+                            <input 
+                                type="number" 
+                                id="numBatches" 
+                                name="num_batches" 
+                                class="form-control mt-2" 
+                                placeholder="Add batches" 
+                                min="1" 
+                                required
+                                onfocus="this.placeholder=''" 
+                                onblur="this.placeholder='Add batches'">
+
                             <button type="submit" class="btn btn-primary mt-2">Add Class</button>
                         </form>
                         <h5 class="h5 mt-3">Existing Classes</h5>
@@ -218,6 +230,7 @@
             </div>
         </div>
 
+        <!-- Assign Course section and Batch-Teacher Assignments remain unchanged -->
         <div class="col-md-6 mb-4">
             <div class="card p-3 h-100">
                 <h2 class="h2">Assign Course</h2>
@@ -277,6 +290,7 @@
             </div>
         </div>
     </div>
+
     <div class="card p-3 mb-4">
         <h2 class="h2">Batch-Teacher Assignments (for Practicals)</h2>
         <form id="batchTeacherForm" action="{{ url_for('manage') }}" method="post">
@@ -296,7 +310,7 @@
                 </div>
             </div>
             <div id="batchTeacherInputs" class="mt-3">
-                </div>
+            </div>
             <button type="submit" class="btn btn-primary mt-3" style="display:none;">Save Batch Assignments</button>
         </form>
     </div>
@@ -314,12 +328,10 @@ document.addEventListener('DOMContentLoaded', function() {
         const selectedClassId = this.value;
         const subjectOptions = subjectSelect.querySelectorAll('.subject-option');
         
-        // Reset subject select
         subjectSelect.value = '';
         teacherInputsContainer.innerHTML = '';
         saveButton.style.display = 'none';
 
-        // Filter subjects based on selected class
         subjectOptions.forEach(opt => {
             if (opt.dataset.class === selectedClassId) {
                 opt.style.display = 'block';
@@ -335,7 +347,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const selectedClassId = classSelect.value;
         const selectedSubjectId = this.value;
         
-        teacherInputsContainer.innerHTML = ''; // Clear previous inputs
+        teacherInputsContainer.innerHTML = '';
 
         if (numBatches > 1 && selectedClassId && selectedSubjectId) {
             for (let i = 1; i <= numBatches; i++) {
