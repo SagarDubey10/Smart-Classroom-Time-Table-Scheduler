@@ -457,12 +457,17 @@ def manage():
                     db.execute(f'DELETE FROM schedule_config WHERE config_id IN ({",".join("?"*len(ids_to_delete))})', list(ids_to_delete))
                 
                 # Update existing and insert new slots
+                break_name_counter = 0
                 for i in range(len(start_times)):
                     config_id = config_ids[i]
                     is_break = int(is_breaks[i])
                     start_time = start_times[i]
                     end_time = end_times[i]
-                    break_name = break_names[i] if break_names[i] else None
+                    
+                    break_name = None
+                    if is_break:
+                        break_name = break_names[break_name_counter] if break_names[break_name_counter] else None
+                        break_name_counter += 1
 
                     if config_id: # Update existing
                         db.execute('UPDATE schedule_config SET is_break=?, start_time=?, end_time=?, break_name=? WHERE config_id=?',
