@@ -1,7 +1,8 @@
 document.addEventListener('DOMContentLoaded', () => {
   const generateBtn = document.getElementById('generateBtn');
   const classSelect = document.getElementById('classSelect');
-  const printBtn = document.getElementById('printBtn');
+  const exportPdfBtn = document.getElementById('exportPdfBtn');
+  const exportExcelBtn = document.getElementById('exportExcelBtn');
 
   // Modal elements
   const editSlotModal = new bootstrap.Modal(document.getElementById('editSlotModal'));
@@ -29,7 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const data = await res.json();
     alert(data.message);
     generateBtn.disabled = false;
-    generateBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Generate Timetable';
+    generateBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Generate';
     renderTimetable();
   });
 
@@ -37,13 +38,20 @@ document.addEventListener('DOMContentLoaded', () => {
     renderTimetable();
   });
 
-  printBtn.addEventListener('click', async () => {
+  exportPdfBtn.addEventListener('click', (e) => {
+    e.preventDefault();
     const selectedClass = classSelect.value;
-    if (!selectedClass) {
-      alert("Please select a class to print.");
-      return;
+    if (selectedClass) {
+      window.location.href = `/api/export/pdf/${selectedClass}`;
     }
-    window.print();
+  });
+
+  exportExcelBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    const selectedClass = classSelect.value;
+    if (selectedClass) {
+      window.location.href = `/api/export/excel/${selectedClass}`;
+    }
   });
 
   saveSlotBtn.addEventListener('click', async () => {
@@ -132,9 +140,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const cellDataArray = data.grid[day][slot.start_time];
         if (cellDataArray && cellDataArray.length > 0) {
           return `<td class="has-content">
+                    <div class="cell-content-wrapper">
                     ${cellDataArray.map(cellData => {
             let batch_info = cellData.is_lab && cellData.batch_number ? `<br><small class="text-info">Batch ${cellData.batch_number}</small>` : '';
-            return `<div class="${cellData.is_lab ? 'lab-session' : 'theory-session'}"
+            return `<div class="timetable-entry ${cellData.is_lab ? 'lab-session' : 'theory-session'}"
                                 data-day="${day}" 
                                 data-time="${slot.start_time}" 
                                 data-class-id="${classId}"
@@ -150,6 +159,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 ${batch_info}
                             </div>`;
           }).join('')}
+                    </div>
                 </td>`;
         } else {
           return `<td class="empty-slot" 

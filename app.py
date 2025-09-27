@@ -1,8 +1,11 @@
-from flask import Flask, render_template, request, jsonify, g, redirect, url_for, flash
+from flask import Flask, render_template, request, jsonify, g, redirect, url_for, flash, send_file
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime
 import random
 from collections import defaultdict
+import pandas as pd
+from fpdf import FPDF
+import io
 
 app = Flask(__name__)
 DB_PATH = 'timetable.db'
@@ -584,22 +587,7 @@ def api_get_timetable(class_name):
     slots = cur.fetchall()
     
     for slot in slots:
-        start_time_obj = datetime.strptime(slot['time_start'], '%I:%M %p')
-        end_time_obj = datetime.strptime(slot['time_end'], '%I:%M %p')
-        duration_minutes = (end_time_obj - start_time_obj).total_seconds() / 60
-        
-        try:
-            start_index = next(i for i, time in enumerate(SLOTS) if time['start_time'] == slot['time_start'])
-        except StopIteration:
-            continue
-            
-        duration_slots = int(duration_minutes / 60)
-        
-        for i in range(start_index, start_index + duration_slots):
-            if i < len(SLOTS) and not SLOTS[i]['is_break']:
-                # Avoid adding duplicates
-                if not any(s['slot_id'] == slot['slot_id'] for s in grid[slot['day']][SLOTS[i]['start_time']]):
-                    grid[slot['day']][SLOTS[i]['start_time']].append(dict(slot))
+        grid[slot['day']][slot['time_start']].append(dict(slot))
             
     cur.execute('SELECT teachers.teacher_id, teachers.name, teacher_preferences.preference FROM teachers LEFT JOIN teacher_preferences ON teachers.teacher_id = teacher_preferences.teacher_id')
     teachers = [dict(row) for row in cur.fetchall()]
@@ -615,7 +603,6 @@ def api_get_timetable(class_name):
     return jsonify({
         'grid': grid, 
         'days': DAYS, 
-        'slots': [s['start_time'] for s in SLOTS if not s['is_break']],
         'slots_full': [dict(s) for s in SLOTS],
         'options': {'teachers': teachers, 'subjects': subjects, 'classrooms': classrooms, 'courses': courses, 'classes': classes}
     })
@@ -686,6 +673,129 @@ def api_delete():
         return jsonify({'status': 'success', 'message': 'Slot deleted successfully.'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+def get_timetable_data_for_export(class_name):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute('SELECT class_id FROM classes WHERE name = ?', (class_name,))
+    class_id_row = cur.fetchone()
+    if not class_id_row:
+        return None, None
+    class_id = class_id_row['class_id']
+
+    slots_full = get_slot_times()
+    teachable_slots = [s for s in slots_full if not s['is_break']]
+    grid = {day: {slot['start_time']: [] for slot in teachable_slots} for day in DAYS}
+
+    slots_query = '''
+        SELECT ts.*, t.name as teacher_name, s.name as subject_name, c.name as classroom_name, co.is_lab
+        FROM timetable_slots ts
+        JOIN courses co ON ts.course_id = co.course_id
+        JOIN subjects s ON co.subject_id = s.subject_id
+        JOIN teachers t ON ts.teacher_id = t.teacher_id
+        JOIN classrooms c ON ts.classroom_id = c.classroom_id
+        WHERE ts.class_id = ?
+    '''
+    cur.execute(slots_query, (class_id,))
+    slots = cur.fetchall()
+
+    for slot in slots:
+        grid[slot['day']][slot['time_start']].append(dict(slot))
+    
+    return grid, slots_full
+
+@app.route('/api/export/pdf/<class_name>')
+def export_timetable_pdf(class_name):
+    grid, slots_full = get_timetable_data_for_export(class_name)
+    if grid is None:
+        return "Class not found", 404
+    
+    pdf = FPDF(orientation='L', unit='mm', format='A4')
+    pdf.add_page()
+    pdf.set_font('Arial', 'B', 16)
+    pdf.cell(0, 10, f'Timetable for {class_name}', 0, 1, 'C')
+    pdf.ln(5)
+
+    pdf.set_font('Arial', 'B', 10)
+    col_width = (pdf.w - 20) / (len(DAYS) + 1)
+    
+    pdf.cell(col_width, 10, 'Time', 1, 0, 'C')
+    for day in DAYS:
+        pdf.cell(col_width, 10, day, 1, 0, 'C')
+    pdf.ln()
+
+    pdf.set_font('Arial', '', 8)
+    for slot in slots_full:
+        time_formatted = f"{slot['start_time']} - {slot['end_time']}"
+        if slot['is_break']:
+            row_height = 10
+            pdf.cell(col_width, row_height, time_formatted, 1, 0, 'C')
+            pdf.cell(col_width * len(DAYS), row_height, slot['break_name'], 1, 1, 'C')
+        else:
+            max_lines = 1
+            for day in DAYS:
+                cell_data_array = grid[day][slot['start_time']]
+                max_lines = max(max_lines, len(cell_data_array) * 3 if cell_data_array else 1)
+            
+            row_height = max_lines * 4
+            
+            y_before = pdf.get_y()
+            pdf.multi_cell(col_width, row_height, time_formatted, 1, 'C')
+            x_after_time = pdf.get_x() + col_width
+            pdf.set_y(y_before)
+
+            for day in DAYS:
+                cell_data_array = grid[day][slot['start_time']]
+                text = ""
+                if cell_data_array:
+                    text = "\n".join([f"{d['subject_name']}\n({d['teacher_name']})\n@{d['classroom_name']}" for d in cell_data_array])
+                
+                pdf.set_xy(x_after_time, y_before)
+                pdf.multi_cell(col_width, 4, text, 1, 'C')
+                x_after_time += col_width
+            
+            pdf.set_y(y_before + row_height)
+    
+    pdf_bytes = pdf.output(dest='S').encode('latin-1')
+    buffer = io.BytesIO(pdf_bytes)
+    buffer.seek(0)
+
+    return send_file(buffer, as_attachment=True, download_name=f'{class_name}_timetable.pdf', mimetype='application/pdf')
+
+@app.route('/api/export/excel/<class_name>')
+def export_timetable_excel(class_name):
+    grid, slots_full = get_timetable_data_for_export(class_name)
+    if grid is None:
+        return "Class not found", 404
+
+    df_data = {'Time': [f"{s['start_time']} - {s['end_time']}" for s in slots_full]}
+    for day in DAYS:
+        day_column = []
+        for slot in slots_full:
+            if slot['is_break']:
+                day_column.append(slot['break_name'])
+            else:
+                cell_data_array = grid[day][slot['start_time']]
+                if cell_data_array:
+                    day_column.append("\n".join([f"{d['subject_name']} ({d['teacher_name']}) @{d['classroom_name']}" for d in cell_data_array]))
+                else:
+                    day_column.append("")
+        df_data[day] = day_column
+    
+    df = pd.DataFrame(df_data)
+    
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='Timetable')
+        worksheet = writer.sheets['Timetable']
+        for idx, col in enumerate(df):
+            series = df[col]
+            max_len = max((series.astype(str).map(len).max(), len(str(series.name)))) + 2
+            worksheet.set_column(idx, idx, max_len)
+
+    output.seek(0)
+    
+    return send_file(output, as_attachment=True, download_name=f'{class_name}_timetable.xlsx', mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 if __name__ == '__main__':
     with app.app_context():
