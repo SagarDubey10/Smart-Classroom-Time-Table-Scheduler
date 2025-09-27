@@ -3,318 +3,319 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Panel - Timetable Management</title>
+    <title>Manage Data - Smart Timetable Manager</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-<div class="container-fluid py-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="main-title">Admin Panel</h1>
-        <a href="{{ url_for('index') }}" class="btn btn-secondary">View Timetables</a>
-    </div>
+    <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="{{ url_for('index') }}">
+                <i class="bi bi-calendar3"></i>
+                Smart Timetable Manager
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('index') }}">Timetable</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" aria-current="page" href="{{ url_for('manage') }}">Manage Data</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#">
+                            <i class="bi bi-person-circle"></i> Admin
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
 
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            <div class="alert-container">
+    <div class="main-content container-fluid py-4">
+        <h1 class="h3 mb-4">Data Management Panel</h1>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
                 {% for category, message in messages %}
-                    <div class="alert alert-{{ category }}">
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
                         {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                     </div>
                 {% endfor %}
-            </div>
-        {% endif %}
-    {% endwith %}
+            {% endif %}
+        {% endwith %}
 
-    {% if warnings %}
+        {% if warnings %}
         <div class="alert alert-warning">
             <h4 class="alert-heading">Validation Warnings</h4>
             <ul>
                 {% for warning in warnings %}
-                    <li>{{ warning }}</li>
+                <li>{{ warning }}</li>
                 {% endfor %}
             </ul>
         </div>
-    {% endif %}
+        {% endif %}
 
-    <div class="card p-3 mb-4">
-        <h2 class="h2">Schedule Configuration</h2>
-        <p class="text-secondary">Define the time slots for lectures and breaks. The timetable will be generated based on this configuration.</p>
-        <form id="scheduleConfigForm" action="{{ url_for('manage') }}" method="post">
-            <input type="hidden" name="form_name" value="schedule_config_form">
-            <div id="slotInputs">
-                {% for slot in schedule_config %}
+        <div class="card p-3 mb-4">
+            <h2 class="h4">Schedule Configuration</h2>
+            <p class="text-muted small">Define the time slots for lectures and breaks.</p>
+            <form id="scheduleConfigForm" action="{{ url_for('manage') }}" method="post">
+                <input type="hidden" name="form_name" value="schedule_config_form">
+                <div id="slotInputs">
+                    {% for slot in schedule_config %}
                     <div class="input-group mb-2">
                         <input type="hidden" name="config_id" value="{{ slot.config_id }}">
                         <input type="time" class="form-control" name="start_time" value="{{ slot.start_time }}" required>
                         <input type="time" class="form-control" name="end_time" value="{{ slot.end_time }}" required>
-                        <select class="form-control" name="is_break">
+                        <select class="form-select" name="is_break">
                             <option value="0" {% if not slot.is_break %}selected{% endif %}>Lecture</option>
                             <option value="1" {% if slot.is_break %}selected{% endif %}>Break</option>
                         </select>
                         <input type="text" class="form-control break-name-input" name="break_name" placeholder="Break Name (optional)" value="{{ slot.break_name or '' }}" {% if not slot.is_break %}disabled{% endif %}>
-                        <button type="button" class="btn btn-danger remove-slot">X</button>
+                        <button type="button" class="btn btn-outline-danger remove-slot"><i class="bi bi-x-lg"></i></button>
                     </div>
-                {% endfor %}
-            </div>
-            <button type="button" class="btn btn-secondary mt-2" id="addSlotBtn">Add Slot</button>
-            <button type="submit" class="btn btn-primary mt-3">Save Schedule</button>
-        </form>
-    </div>
-
-    <div class="row">
-        <div class="col-md-6 mb-4">
-            <div class="card p-3 h-100">
-                <h2 class="h2">Add Teacher</h2>
-                <form id="addTeacherForm" action="{{ url_for('manage') }}" method="post" onsubmit="return confirm('Are you sure you want to add this teacher?');">
-                    <input type="hidden" name="form_name" value="add_teacher_form">
-                    <div class="mb-3">
-                        <input type="text" id="teacherName" name="teacher_name" class="form-control" placeholder="Teacher Name" required>
-                    </div>
-                    <div class="mb-3">
-                        <select id="teacherPref" name="teacher_pref" class="form-control">
-                            <option value="">No Preference</option>
-                            <option value="morning">Morning Lectures</option>
-                            <option value="afternoon">Afternoon Lectures</option>
-                        </select>
-                    </div>
-                    <button type="submit" class="btn btn-primary">Add Teacher</button>
-                </form>
-                <h3 class="h3">Existing Teachers</h3>
-                <div class="table-responsive">
-                    <table class="table table-striped">
-                        <thead><tr><th>ID</th><th>Name</th><th>Preference</th><th>Action</th></tr></thead>
-                        <tbody>
-                            {% for teacher in teachers %}
-                            <tr>
-                                <td>{{ teacher.teacher_id }}</td>
-                                <td>{{ teacher.name }}</td>
-                                <td>{{ teacher.preference or 'N/A' }}</td>
-                                <td>
-                                    <form action="{{ url_for('manage') }}" method="post" onsubmit="return confirm('Are you sure you want to delete this teacher?');">
-                                        <input type="hidden" name="form_name" value="delete_teacher_form">
-                                        <input type="hidden" name="teacher_id" value="{{ teacher.teacher_id }}">
-                                        <button type="submit" class="btn btn-danger btn-sm">Delete</button>
-                                    </form>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                    {% endfor %}
                 </div>
-            </div>
+                <button type="button" class="btn btn-secondary mt-2" id="addSlotBtn"><i class="bi bi-plus-lg"></i> Add Slot</button>
+                <button type="submit" class="btn btn-primary mt-3">Save Schedule</button>
+            </form>
         </div>
-        
-        <div class="col-md-6 mb-4">
-            <div class="card p-3 h-100">
-                <h2 class="h2">Add Subject</h2>
-                <form id="addSubjectForm" action="{{ url_for('manage') }}" method="post" onsubmit="return confirm('Are you sure you want to add this subject?');">
-                    <input type="hidden" name="form_name" value="add_subject_form">
-                    <div class="mb-3">
-                        <input type="text" id="subjectName" name="subject_name" class="form-control" placeholder="Subject Name" required>
-                    </div>
-                    <div class="mb-3">
-                        <input type="text" id="subjectCode" name="subject_code" class="form-control" placeholder="Subject Code (e.g., CS101)" required>
-                    </div>
-                    <button type="submit" class="btn btn-primary">Add Subject</button>
-                </form>
-                <h3 class="h3">Existing Subjects</h3>
-                <div class="table-responsive">
-                    <table class="table table-striped">
-                        <thead><tr><th>ID</th><th>Name</th><th>Code</th><th>Action</th></tr></thead>
-                        <tbody>
-                            {% for subject in subjects %}
-                            <tr>
-                                <td>{{ subject.subject_id }}</td>
-                                <td>{{ subject.name }}</td>
-                                <td>{{ subject.code }}</td>
-                                <td>
-                                    <form action="{{ url_for('manage') }}" method="post" onsubmit="return confirm('Are you sure you want to delete this subject?');">
-                                        <input type="hidden" name="form_name" value="delete_subject_form">
-                                        <input type="hidden" name="subject_id" value="{{ subject.subject_id }}">
-                                        <button type="submit" class="btn btn-danger btn-sm">Delete</button>
-                                    </form>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div>
 
-    <div class="row">
-        <div class="col-md-6 mb-4">
-            <div class="card p-3 h-100">
-                <h2 class="h2">Add Class & Classroom</h2>
-                <div class="row">
-                    <div class="col-md-6">
-                        <h4>Add Class</h4>
-                        <form id="addClassForm" action="{{ url_for('manage') }}" method="post" onsubmit="return confirm('Are you sure you want to add this class?');">
-                            <input type="hidden" name="form_name" value="add_class_form">
-                            <input type="text" id="className" name="class_name" class="form-control" placeholder="Class Name (e.g., TE-B1)" required>
-                            
-                            <!-- Updated Number of Batches input -->
-                            <input 
-                                type="number" 
-                                id="numBatches" 
-                                name="num_batches" 
-                                class="form-control mt-2" 
-                                placeholder="Add batches" 
-                                min="1" 
-                                required
-                                onfocus="this.placeholder=''" 
-                                onblur="this.placeholder='Add batches'">
-
-                            <button type="submit" class="btn btn-primary mt-2">Add Class</button>
-                        </form>
-                        <h5 class="h5 mt-3">Existing Classes</h5>
-                        <div class="table-responsive">
-                            <table class="table table-sm">
-                                <thead><tr><th>ID</th><th>Name</th><th>Batches</th><th>Action</th></tr></thead>
-                                <tbody>
-                                    {% for class_obj in classes %}
-                                    <tr>
-                                        <td>{{ class_obj.class_id }}</td>
-                                        <td>{{ class_obj.name }}</td>
-                                        <td>{{ class_obj.num_batches }}</td>
-                                        <td>
-                                            <form action="{{ url_for('manage') }}" method="post" onsubmit="return confirm('Are you sure you want to delete this class?');">
-                                                <input type="hidden" name="form_name" value="delete_class_form">
-                                                <input type="hidden" name="class_id" value="{{ class_obj.class_id }}">
-                                                <button type="submit" class="btn btn-danger btn-sm">Del</button>
-                                            </form>
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <h4>Add Classroom</h4>
-                        <form id="addClassroomForm" action="{{ url_for('manage') }}" method="post" onsubmit="return confirm('Are you sure you want to add this classroom?');">
-                            <input type="hidden" name="form_name" value="add_classroom_form">
-                            <input type="text" id="classroomName" name="classroom_name" class="form-control" placeholder="Room Name (e.g., LAB-1)" required>
-                            <select id="isLab" name="is_lab" class="form-control mt-2">
-                                <option value="0">Theory Room</option>
-                                <option value="1">Lab Room</option>
+        <div class="row">
+            <div class="col-lg-6 mb-4">
+                <div class="card p-3 h-100">
+                    <h2 class="h4">Teachers</h2>
+                    <form id="addTeacherForm" action="{{ url_for('manage') }}" method="post" class="mb-3">
+                        <input type="hidden" name="form_name" value="add_teacher_form">
+                        <div class="input-group">
+                            <input type="text" id="teacherName" name="teacher_name" class="form-control" placeholder="Teacher Name" required>
+                             <select id="teacherPref" name="teacher_pref" class="form-select">
+                                <option value="">No Preference</option>
+                                <option value="morning">Morning</option>
+                                <option value="afternoon">Afternoon</option>
                             </select>
-                            <button type="submit" class="btn btn-primary mt-2">Add Classroom</button>
-                        </form>
-                        <h5 class="h5 mt-3">Existing Classrooms</h5>
-                        <div class="table-responsive">
-                            <table class="table table-sm">
-                                <thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Action</th></tr></thead>
-                                <tbody>
-                                    {% for room in classrooms %}
-                                    <tr>
-                                        <td>{{ room.classroom_id }}</td>
-                                        <td>{{ room.name }}</td>
-                                        <td>{{ 'Lab' if room.is_lab else 'Theory' }}</td>
-                                        <td>
-                                            <form action="{{ url_for('manage') }}" method="post" onsubmit="return confirm('Are you sure you want to delete this classroom?');">
-                                                <input type="hidden" name="form_name" value="delete_classroom_form">
-                                                <input type="hidden" name="classroom_id" value="{{ room.classroom_id }}">
-                                                <button type="submit" class="btn btn-danger btn-sm">Del</button>
-                                            </form>
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
+                            <button type="submit" class="btn btn-primary">Add</button>
+                        </div>
+                    </form>
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead><tr><th>ID</th><th>Name</th><th>Preference</th><th>Action</th></tr></thead>
+                            <tbody>
+                                {% for teacher in teachers %}
+                                <tr>
+                                    <td>{{ teacher.teacher_id }}</td>
+                                    <td>{{ teacher.name }}</td>
+                                    <td>{{ teacher.preference or 'N/A' }}</td>
+                                    <td>
+                                        <form action="{{ url_for('manage') }}" method="post" onsubmit="return confirm('Delete this teacher?');">
+                                            <input type="hidden" name="form_name" value="delete_teacher_form">
+                                            <input type="hidden" name="teacher_id" value="{{ teacher.teacher_id }}">
+                                            <button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-trash"></i></button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-6 mb-4">
+                <div class="card p-3 h-100">
+                    <h2 class="h4">Subjects</h2>
+                    <form id="addSubjectForm" action="{{ url_for('manage') }}" method="post" class="mb-3">
+                        <input type="hidden" name="form_name" value="add_subject_form">
+                        <div class="input-group">
+                            <input type="text" id="subjectName" name="subject_name" class="form-control" placeholder="Subject Name" required>
+                            <input type="text" id="subjectCode" name="subject_code" class="form-control" placeholder="Subject Code" required>
+                            <button type="submit" class="btn btn-primary">Add</button>
+                        </div>
+                    </form>
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead><tr><th>ID</th><th>Name</th><th>Code</th><th>Action</th></tr></thead>
+                            <tbody>
+                                {% for subject in subjects %}
+                                <tr>
+                                    <td>{{ subject.subject_id }}</td>
+                                    <td>{{ subject.name }}</td>
+                                    <td>{{ subject.code }}</td>
+                                    <td>
+                                        <form action="{{ url_for('manage') }}" method="post" onsubmit="return confirm('Delete this subject?');">
+                                            <input type="hidden" name="form_name" value="delete_subject_form">
+                                            <input type="hidden" name="subject_id" value="{{ subject.subject_id }}">
+                                            <button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-trash"></i></button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-6 mb-4">
+                <div class="card p-3 h-100">
+                    <h2 class="h4">Classes & Classrooms</h2>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h5>Add Class</h5>
+                            <form id="addClassForm" action="{{ url_for('manage') }}" method="post">
+                                <input type="hidden" name="form_name" value="add_class_form">
+                                <input type="text" id="className" name="class_name" class="form-control mb-2" placeholder="Class Name" required>
+                                <input type="number" id="numBatches" name="num_batches" class="form-control mb-2" placeholder="Add batches" min="1" value="1" required>
+                                <button type="submit" class="btn btn-primary w-100">Add Class</button>
+                            </form>
+                            <h5 class="mt-3">Existing Classes</h5>
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead><tr><th>Name</th><th>Batches</th><th>Action</th></tr></thead>
+                                    <tbody>
+                                        {% for class_obj in classes %}
+                                        <tr>
+                                            <td>{{ class_obj.name }}</td>
+                                            <td>{{ class_obj.num_batches }}</td>
+                                            <td>
+                                                <form action="{{ url_for('manage') }}" method="post" onsubmit="return confirm('Delete this class?');">
+                                                    <input type="hidden" name="form_name" value="delete_class_form">
+                                                    <input type="hidden" name="class_id" value="{{ class_obj.class_id }}">
+                                                    <button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-trash"></i></button>
+                                                </form>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <h5>Add Classroom</h5>
+                            <form id="addClassroomForm" action="{{ url_for('manage') }}" method="post">
+                                <input type="hidden" name="form_name" value="add_classroom_form">
+                                <input type="text" id="classroomName" name="classroom_name" class="form-control mb-2" placeholder="Room Name" required>
+                                <select id="isLab" name="is_lab" class="form-select mb-2">
+                                    <option value="0">Theory Room</option>
+                                    <option value="1">Lab Room</option>
+                                </select>
+                                <button type="submit" class="btn btn-primary w-100">Add Classroom</button>
+                            </form>
+                            <h5 class="mt-3">Existing Classrooms</h5>
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead><tr><th>Name</th><th>Type</th><th>Action</th></tr></thead>
+                                    <tbody>
+                                        {% for room in classrooms %}
+                                        <tr>
+                                            <td>{{ room.name }}</td>
+                                            <td>{{ 'Lab' if room.is_lab else 'Theory' }}</td>
+                                            <td>
+                                                <form action="{{ url_for('manage') }}" method="post" onsubmit="return confirm('Delete this classroom?');">
+                                                    <input type="hidden" name="form_name" value="delete_classroom_form">
+                                                    <input type="hidden" name="classroom_id" value="{{ room.classroom_id }}">
+                                                    <button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-trash"></i></button>
+                                                </form>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
+
+            <div class="col-lg-6 mb-4">
+                <div class="card p-3 h-100">
+                    <h2 class="h4">Assign Course to Class</h2>
+                    <form id="addCourseForm" action="{{ url_for('manage') }}" method="post">
+                        <input type="hidden" name="form_name" value="add_course_form">
+                        <div class="mb-2">
+                            <select id="courseClass" name="course_class" class="form-select" required>
+                                <option value="">Select Class</option>
+                                {% for class_obj in classes %}<option value="{{ class_obj.class_id }}">{{ class_obj.name }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <select id="courseSubject" name="course_subject" class="form-select" required>
+                                <option value="">Select Subject</option>
+                                {% for subject in subjects %}<option value="{{ subject.subject_id }}">{{ subject.name }} ({{ subject.code }})</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <select id="courseTeacher" name="course_teacher" class="form-select" required>
+                                <option value="">Select Teacher</option>
+                                {% for teacher in teachers %}<option value="{{ teacher.teacher_id }}">{{ teacher.name }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <input type="number" id="weeklyLectures" name="weekly_lectures" class="form-control" placeholder="Weekly Lectures/Practicals" min="1" required>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input type="checkbox" id="isLabCheckbox" name="is_lab_checkbox" class="form-check-input">
+                            <label class="form-check-label" for="isLabCheckbox">Is this a Lab/Practical?</label>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">Add Course Assignment</button>
+                    </form>
+                    <h5 class="mt-3">Existing Assignments</h5>
+                    <div class="table-responsive">
+                        <table class="table table-hover table-sm">
+                            <thead><tr><th>Class</th><th>Subject</th><th>Teacher</th><th>Type</th><th>Action</th></tr></thead>
+                            <tbody>
+                                {% for course in courses %}
+                                <tr>
+                                    <td>{{ course.class_name }}</td>
+                                    <td>{{ course.subject_name }}</td>
+                                    <td>{{ course.teacher_name }}</td>
+                                    <td>{{ 'Lab' if course.is_lab else 'Theory' }}</td>
+                                    <td>
+                                        <form action="{{ url_for('manage') }}" method="post" onsubmit="return confirm('Delete this course?');">
+                                            <input type="hidden" name="form_name" value="delete_course_form">
+                                            <input type="hidden" name="course_id" value="{{ course.course_id }}">
+                                            <button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-trash"></i></button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <!-- Assign Course section and Batch-Teacher Assignments remain unchanged -->
-        <div class="col-md-6 mb-4">
-            <div class="card p-3 h-100">
-                <h2 class="h2">Assign Course</h2>
-                <form id="addCourseForm" action="{{ url_for('manage') }}" method="post" onsubmit="return confirm('Are you sure you want to add this course assignment?');">
-                    <input type="hidden" name="form_name" value="add_course_form">
-                    <div class="mb-3">
-                        <select id="courseClass" name="course_class" class="form-control" required>
+        <div class="card p-3 mb-4">
+            <h2 class="h4">Batch-Teacher Assignments (for Practicals)</h2>
+            <form id="batchTeacherForm" action="{{ url_for('manage') }}" method="post">
+                <input type="hidden" name="form_name" value="batch_teacher_form">
+                <div class="row">
+                    <div class="col-md-4">
+                        <select id="batchClassSelect" name="class_id" class="form-select" required>
                             <option value="">Select Class</option>
-                            {% for class_obj in classes %}<option value="{{ class_obj.class_id }}">{{ class_obj.name }}</option>{% endfor %}
+                            {% for c in classes %}{% if c.num_batches > 1 %}<option value="{{ c.class_id }}" data-batches="{{ c.num_batches }}">{{ c.name }}</option>{% endif %}{% endfor %}
                         </select>
                     </div>
-                    <div class="mb-3">
-                        <select id="courseSubject" name="course_subject" class="form-control" required>
-                            <option value="">Select Subject</option>
-                            {% for subject in subjects %}<option value="{{ subject.subject_id }}">{{ subject.name }} ({{ subject.code }})</option>{% endfor %}
+                    <div class="col-md-4">
+                        <select id="batchSubjectSelect" name="subject_id" class="form-select" required>
+                            <option value="">Select Practical Subject</option>
+                            {% for course in courses %}{% if course.is_lab %}<option class="subject-option" value="{{ course.subject_id }}" data-class="{{ course.class_id }}" style="display:none;">{{ course.subject_name }}</option>{% endif %}{% endfor %}
                         </select>
                     </div>
-                    <div class="mb-3">
-                        <select id="courseTeacher" name="course_teacher" class="form-control" required>
-                            <option value="">Select Teacher</option>
-                            {% for teacher in teachers %}<option value="{{ teacher.teacher_id }}">{{ teacher.name }}</option>{% endfor %}
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <input type="number" id="weeklyLectures" name="weekly_lectures" class="form-control" placeholder="Weekly Lectures" min="1" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-check-label text-secondary">Is Lab?</label>
-                        <input type="checkbox" id="isLabCheckbox" name="is_lab_checkbox" class="form-check-input ms-2">
-                    </div>
-                    <button type="submit" class="btn btn-primary">Add Course</button>
-                </form>
-                <h3 class="h3 mt-4">Existing Course Assignments</h3>
-                <div class="table-responsive">
-                    <table class="table table-striped">
-                        <thead><tr><th>Class</th><th>Subject</th><th>Teacher</th><th>Lectures</th><th>Type</th><th>Action</th></tr></thead>
-                        <tbody>
-                            {% for course in courses %}
-                            <tr>
-                                <td>{{ course.class_name }}</td>
-                                <td>{{ course.subject_name }}</td>
-                                <td>{{ course.teacher_name }}</td>
-                                <td>{{ course.weekly_lectures }}</td>
-                                <td>{{ 'Lab' if course.is_lab else 'Theory' }}</td>
-                                <td>
-                                    <form action="{{ url_for('manage') }}" method="post" onsubmit="return confirm('Are you sure you want to delete this course?');">
-                                        <input type="hidden" name="form_name" value="delete_course_form">
-                                        <input type="hidden" name="course_id" value="{{ course.course_id }}">
-                                        <button type="submit" class="btn btn-danger btn-sm">Delete</button>
-                                    </form>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
                 </div>
-            </div>
+                <div id="batchTeacherInputs" class="mt-3"></div>
+                <button type="submit" class="btn btn-primary mt-3" style="display:none;">Save Batch Assignments</button>
+            </form>
         </div>
     </div>
-
-    <div class="card p-3 mb-4">
-        <h2 class="h2">Batch-Teacher Assignments (for Practicals)</h2>
-        <form id="batchTeacherForm" action="{{ url_for('manage') }}" method="post">
-            <input type="hidden" name="form_name" value="batch_teacher_form">
-            <div class="row">
-                <div class="col-md-4">
-                    <select id="batchClassSelect" name="class_id" class="form-select" required>
-                        <option value="">Select Class</option>
-                        {% for c in classes %}{% if c.num_batches > 1 %}<option value="{{ c.class_id }}" data-batches="{{ c.num_batches }}">{{ c.name }}</option>{% endif %}{% endfor %}
-                    </select>
-                </div>
-                <div class="col-md-4">
-                    <select id="batchSubjectSelect" name="subject_id" class="form-select" required>
-                        <option value="">Select Practical Subject</option>
-                        {% for course in courses %}{% if course.is_lab %}<option class="subject-option" value="{{ course.subject_id }}" data-class="{{ course.class_id }}" style="display:none;">{{ course.subject_name }}</option>{% endif %}{% endfor %}
-                    </select>
-                </div>
-            </div>
-            <div id="batchTeacherInputs" class="mt-3">
-            </div>
-            <button type="submit" class="btn btn-primary mt-3" style="display:none;">Save Batch Assignments</button>
-        </form>
-    </div>
-</div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/js/bootstrap.bundle.min.js"></script>
 <script>
@@ -333,11 +334,7 @@ document.addEventListener('DOMContentLoaded', function() {
         saveButton.style.display = 'none';
 
         subjectOptions.forEach(opt => {
-            if (opt.dataset.class === selectedClassId) {
-                opt.style.display = 'block';
-            } else {
-                opt.style.display = 'none';
-            }
+            opt.style.display = (opt.dataset.class === selectedClassId) ? 'block' : 'none';
         });
     });
 
@@ -347,15 +344,15 @@ document.addEventListener('DOMContentLoaded', function() {
         const selectedClassId = classSelect.value;
         const selectedSubjectId = this.value;
         
-        teacherInputsContainer.innerHTML = '';
+        teacherInputsContainer.innerHTML = ''; 
 
         if (numBatches > 1 && selectedClassId && selectedSubjectId) {
             for (let i = 1; i <= numBatches; i++) {
                 const div = document.createElement('div');
-                div.classList.add('mb-2', 'row');
+                div.classList.add('mb-2', 'row', 'align-items-center');
                 div.innerHTML = `
-                    <label class="col-sm-2 col-form-label">Batch ${i} Teacher:</label>
-                    <div class="col-sm-10">
+                    <label class="col-sm-3 col-form-label">Batch ${i} Teacher:</label>
+                    <div class="col-sm-9">
                         <select name="teacher_batch_${i}" class="form-select">
                             <option value="">Select Teacher</option>
                             {% for teacher in teachers %}

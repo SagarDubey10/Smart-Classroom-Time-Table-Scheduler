@@ -3,83 +3,111 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Automated Timetable</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css">
+    <title>Smart Timetable Manager</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css">
 </head>
 <body>
-<div class="container-fluid py-4">
-    <div class="main-header d-flex justify-content-between align-items-center mb-4">
-        <h1 class="main-title">Generated Timetables</h1>
-        <div class="d-flex">
-            <button id="generateBtn" class="btn btn-primary me-2">Generate Timetable</button>
-            <a href="{{ url_for('manage') }}" class="btn btn-secondary">Admin Panel</a>
+    <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="{{ url_for('index') }}">
+                <i class="bi bi-calendar3"></i>
+                Smart Timetable Manager
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" aria-current="page" href="{{ url_for('index') }}">Timetable</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('manage') }}">Manage Data</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#">
+                            <i class="bi bi-person-circle"></i> Admin
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="main-content container mt-4">
+        <div class="card p-4">
+            <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap">
+                <h1 class="h3 mb-0">Generated Timetables</h1>
+                <div class="mt-3 mt-md-0">
+                    <button id="generateBtn" class="btn btn-primary">
+                        <i class="bi bi-arrow-clockwise"></i> Generate Timetable
+                    </button>
+                    <button id="printBtn" class="btn btn-outline-secondary">
+                        <i class="bi bi-printer"></i> Print
+                    </button>
+                </div>
+            </div>
+
+            <div class="class-selector-bar p-3 mb-4">
+                <label for="classSelect" class="form-label me-3">Select a Class</label>
+                <select id="classSelect" class="form-select w-auto">
+                    {% for class_obj in classes %}
+                        <option value="{{ class_obj.name }}" data-id="{{ class_obj.class_id }}">{{ class_obj.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div id="timetableContainer" class="table-responsive">
+                </div>
         </div>
     </div>
-    
-    <div class="card p-3 mb-4 d-flex flex-row align-items-center">
-        <label for="classSelect" class="form-label mb-0 me-3">Select a Class:</label>
-        <select id="classSelect" class="form-select me-3 w-auto">
-            {% for class_obj in classes %}
-                <option value="{{ class_obj.name }}" data-id="{{ class_obj.class_id }}">{{ class_obj.name }}</option>
-            {% endfor %}
-        </select>
-        <button id="printBtn" class="btn btn-danger">Print Timetable</button>
-    </div>
 
-    <div id="timetableContainer" class="card p-3 weekly-schedule-card">
-        <!-- Timetable will be rendered here by JavaScript -->
-    </div>
-</div>
-
-<div class="modal fade" id="editSlotModal" tabindex="-1" aria-labelledby="editSlotModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="editSlotModalLabel">Edit Slot</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <form id="editSlotForm">
-          <div class="mb-3">
-            <label for="modalDay" class="form-label">Day</label>
-            <input type="text" class="form-control" id="modalDay" readonly>
+    <div class="modal fade" id="editSlotModal" tabindex="-1" aria-labelledby="editSlotModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="editSlotModalLabel">Edit Slot</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
-          <div class="mb-3">
-            <label for="modalTime" class="form-label">Time</label>
-            <input type="text" class="form-control" id="modalTime" readonly>
+          <div class="modal-body">
+            <form id="editSlotForm">
+              <div class="mb-3">
+                <label for="modalDay" class="form-label">Day</label>
+                <input type="text" class="form-control" id="modalDay" readonly>
+              </div>
+              <div class="mb-3">
+                <label for="modalTime" class="form-label">Time</label>
+                <input type="text" class="form-control" id="modalTime" readonly>
+              </div>
+              <div class="mb-3">
+                <label for="modalSubject" class="form-label">Subject</label>
+                <select class="form-control" id="modalSubject"></select>
+              </div>
+              <div class="mb-3">
+                <label for="modalTeacher" class="form-label">Teacher</label>
+                <select class="form-control" id="modalTeacher"></select>
+              </div>
+              <div class="mb-3">
+                <label for="modalClassroom" class="form-label">Classroom</label>
+                <select class="form-control" id="modalClassroom"></select>
+              </div>
+              <div id="validation-alert" class="alert alert-danger d-none"></div>
+              <input type="hidden" id="modalSlotId">
+              <input type="hidden" id="modalClassId">
+              <input type="hidden" id="modalStartTime">
+              <input type="hidden" id="modalEndTime">
+            </form>
           </div>
-          <div class="mb-3">
-            <label for="modalSubject" class="form-label">Subject</label>
-            <select class="form-control" id="modalSubject">
-              </select>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            <button type="button" class="btn btn-danger" id="clearSlotBtn">Clear Slot</button>
+            <button type="button" class="btn btn-primary" id="saveSlotBtn">Save Changes</button>
           </div>
-          <div class="mb-3">
-            <label for="modalTeacher" class="form-label">Teacher</label>
-            <select class="form-control" id="modalTeacher">
-              </select>
-          </div>
-          <div class="mb-3">
-            <label for="modalClassroom" class="form-label">Classroom</label>
-            <select class="form-control" id="modalClassroom">
-              </select>
-          </div>
-          <div id="validation-alert" class="alert alert-danger d-none"></div>
-          <input type="hidden" id="modalSlotId">
-          <input type="hidden" id="modalClassId">
-          <input type="hidden" id="modalStartTime">
-          <input type="hidden" id="modalEndTime">
-        </form>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-        <button type="button" class="btn btn-danger" id="clearSlotBtn">Clear Slot</button>
-        <button type="button" class="btn btn-primary" id="saveSlotBtn">Save Changes</button>
+        </div>
       </div>
     </div>
-  </div>
-</div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/js/bootstrap.bundle.min.js"></script>
 <script src="{{ url_for('static', filename='js/timetable.js') }}"></script>

@@ -24,12 +24,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // Event Listeners
   generateBtn.addEventListener('click', async () => {
     generateBtn.disabled = true;
-    generateBtn.innerText = 'Generating...';
+    generateBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Generating...';
     const res = await fetch('/api/timetable/generate', { method: 'POST' });
     const data = await res.json();
     alert(data.message);
     generateBtn.disabled = false;
-    generateBtn.innerText = 'Generate Timetable';
+    generateBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Generate Timetable';
     renderTimetable();
   });
 
@@ -37,101 +37,13 @@ document.addEventListener('DOMContentLoaded', () => {
     renderTimetable();
   });
 
-  // The new fix: Print by generating a new HTML document
   printBtn.addEventListener('click', async () => {
     const selectedClass = classSelect.value;
     if (!selectedClass) {
       alert("Please select a class to print.");
       return;
     }
-
-    const res = await fetch(`/api/timetables/${selectedClass}`);
-    const data = await res.json();
-
-    let printWindow = window.open('', '_blank');
-
-    // Generate the new HTML content for printing
-    let printContent = `
-            <html>
-            <head>
-                <title>Timetable for ${selectedClass}</title>
-                <style>
-                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 1cm; }
-                    .timetable-table { width: 100%; border-collapse: collapse; }
-                    .timetable-table th, .timetable-table td { border: 1px solid #000; padding: 5px; text-align: center; font-size: 8pt; }
-                    .timetable-table th { background-color: #e9ecef; }
-                    .break-slot { background-color: #d1d1d1; font-weight: bold; }
-                    .empty-slot::before { content: ""; }
-                    /* Make all text black and backgrounds white for clean printing */
-                    .timetable-table, .timetable-table th, .timetable-table td { background-color: #fff !important; color: #000 !important; }
-                    @page { size: A4 landscape; margin: 1cm; }
-                </style>
-            </head>
-            <body>
-                <h1 style="text-align: center;">Timetable for ${selectedClass}</h1>
-                <table class="timetable-table">
-                    <thead>
-                        <tr>
-                            <th>Time</th>
-                            ${data.days.map(day => `<th>${day}</th>`).join('')}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${data.slots_full.map(slot => {
-      let slotStart = slot.start_time;
-      let slotEnd = slot.end_time;
-      let timeFormatted = `${slotStart} - ${slotEnd}`;
-
-      if (slot.is_break) {
-        return `
-                                    <tr>
-                                        <td>${timeFormatted}</td>
-                                        <td colspan="${data.days.length}" class="break-slot">${slot.break_name}</td>
-                                    </tr>
-                                `;
-      }
-
-      return `
-                                <tr>
-                                    <td>${timeFormatted}</td>
-                                    ${data.days.map(day => {
-        const cellDataArray = data.grid[day][slotStart];
-        if (cellDataArray && cellDataArray.length > 0) {
-          return `<td style="background-color: #fff !important; color: #000 !important;">
-                ${cellDataArray.map(cellData => {
-            let batch_info = '';
-            if (cellData.is_lab && cellData.batch_number) {
-              batch_info = `<br><small>Batch ${cellData.batch_number}</small>`;
-            }
-            return `<div>
-                                <strong>${cellData.subject_name}</strong><br>
-                                <small>${cellData.teacher_name}</small><br>
-                                <small>@${cellData.classroom_name}</small>
-                                ${batch_info}
-                            </div>`;
-          }).join('<hr>')}
-            </td>`;
-        } else {
-          return `
-                                                <td style="background-color: #fff !important; color: #000 !important;" class="empty-slot"></td>
-                                            `;
-        }
-      }).join('')}
-                                </tr>
-                            `;
-    }).join('')}
-                    </tbody>
-                </table>
-            </body>
-            </html>
-        `;
-
-    // Write the new HTML to the print window and trigger printing
-    printWindow.document.write(printContent);
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
-    printWindow.close();
+    window.print();
   });
 
   saveSlotBtn.addEventListener('click', async () => {
@@ -154,7 +66,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const data = await res.json();
     if (data.status === 'success') {
-      alert(data.message);
       editSlotModal.hide();
       renderTimetable();
     } else {
@@ -164,25 +75,17 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   clearSlotBtn.addEventListener('click', async () => {
-    if (!modalSlotId.value) {
-      alert('This slot is already empty.');
-      return;
-    }
+    if (!modalSlotId.value) return;
 
     if (confirm('Are you sure you want to clear this slot?')) {
-      const payload = {
-        slot_id: modalSlotId.value,
-      };
-
       const res = await fetch('/api/timetable/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ slot_id: modalSlotId.value })
       });
 
       const data = await res.json();
       if (data.status === 'success') {
-        alert(data.message);
         editSlotModal.hide();
         renderTimetable();
       } else {
@@ -194,7 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
   async function renderTimetable() {
     const selectedClass = classSelect.value;
     if (!selectedClass) {
-      document.getElementById('timetableContainer').innerHTML = '<p class="text-white text-center">Please select a class.</p>';
+      document.getElementById('timetableContainer').innerHTML = '<p class="text-center text-muted">Please select a class to view the timetable.</p>';
       return;
     }
 
@@ -204,105 +107,83 @@ document.addEventListener('DOMContentLoaded', () => {
     const classId = classSelect.options[classSelect.selectedIndex].dataset.id;
 
     let html = `
-            <h2 class="text-white mb-3">Timetable for ${selectedClass}</h2>
-            <div class="table-responsive">
-                <table class="table table-dark table-striped table-bordered text-center timetable-table">
-                    <thead>
-                        <tr>
-                            <th>Time</th>
-                            ${data.days.map(day => `<th>${day}</th>`).join('')}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${data.slots_full.map(slot => {
-      let slotStart = slot.start_time;
-      let slotEnd = slot.end_time;
-      let timeFormatted = `${slotStart} - ${slotEnd}`;
+            <h2 class="h4 mb-3">Timetable for ${selectedClass}</h2>
+            <table class="table table-bordered text-center timetable-table">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        ${data.days.map(day => `<th>${day}</th>`).join('')}
+                    </tr>
+                </thead>
+                <tbody>
+                    ${data.slots_full.map(slot => {
+      let timeFormatted = `${slot.start_time} - ${slot.end_time}`;
 
       if (slot.is_break) {
-        return `
-                                    <tr>
-                                        <td>${timeFormatted}</td>
-                                        <td colspan="${data.days.length}" class="break-slot text-center">${slot.break_name}</td>
-                                    </tr>
-                                `;
+        return `<tr>
+                    <td>${timeFormatted}</td>
+                    <td colspan="${data.days.length}" class="break-slot">${slot.break_name}</td>
+                </tr>`;
       }
 
-      return `
-                                <tr>
-                                    <td>${timeFormatted}</td>
-                                    ${data.days.map(day => {
-        const cellDataArray = data.grid[day][slotStart];
+      return `<tr>
+                <td>${timeFormatted}</td>
+                ${data.days.map(day => {
+        const cellDataArray = data.grid[day][slot.start_time];
         if (cellDataArray && cellDataArray.length > 0) {
-          return `
-                <td class="has-content">
+          return `<td class="has-content">
                     ${cellDataArray.map(cellData => {
-            let batch_info = '';
-            if (cellData.is_lab && cellData.batch_number) {
-              batch_info = `<br><small class="text-info">Batch ${cellData.batch_number}</small>`;
-            }
-            return `
-                            <div class="${cellData.is_lab ? 'lab-session' : 'theory-session'}"
+            let batch_info = cellData.is_lab && cellData.batch_number ? `<br><small class="text-info">Batch ${cellData.batch_number}</small>` : '';
+            return `<div class="${cellData.is_lab ? 'lab-session' : 'theory-session'}"
                                 data-day="${day}" 
-                                data-time="${slotStart}" 
+                                data-time="${slot.start_time}" 
                                 data-class-id="${classId}"
                                 data-slot-id="${cellData.slot_id}"
-                                data-course-id="${cellData.course_id}"
                                 data-subject-id="${cellData.subject_id}"
                                 data-teacher-id="${cellData.teacher_id}"
                                 data-classroom-id="${cellData.classroom_id}"
                                 data-bs-toggle="modal" 
-                                data-bs-target="#editSlotModal"
-                                style="cursor: pointer; padding: 5px; margin-bottom: 5px; border-radius: 5px;"
-                            >
+                                data-bs-target="#editSlotModal">
                                 <strong>${cellData.subject_name}</strong><br>
                                 <small>${cellData.teacher_name}</small><br>
                                 <small class="text-muted">@${cellData.classroom_name}</small>
                                 ${batch_info}
-                            </div>
-                        `;
+                            </div>`;
           }).join('')}
-                </td>
-            `;
+                </td>`;
         } else {
-          return `
-                                                <td class="empty-slot" 
-                                                    data-day="${day}" 
-                                                    data-time="${slotStart}" 
-                                                    data-class-id="${classId}"
-                                                    data-bs-toggle="modal" 
-                                                    data-bs-target="#editSlotModal">
-                                                    Click to add
-                                                </td>
-                                            `;
+          return `<td class="empty-slot" 
+                                data-day="${day}" 
+                                data-time="${slot.start_time}" 
+                                data-class-id="${classId}"
+                                data-bs-toggle="modal" 
+                                data-bs-target="#editSlotModal">
+                                + Add
+                            </td>`;
         }
       }).join('')}
-                                </tr>
-                            `;
+            </tr>`;
     }).join('')}
-                    </tbody>
-                </table>
-            </div>
+                </tbody>
+            </table>
         `;
     timetableContainer.innerHTML = html;
 
-    document.querySelectorAll('.timetable-table td').forEach(cell => {
+    // Re-attach event listeners for the new timetable
+    attachModalEventListeners(data);
+  }
+
+  function attachModalEventListeners(data) {
+    document.querySelectorAll('.timetable-table td[data-day]').forEach(cell => {
       cell.addEventListener('click', (e) => {
         const targetElement = e.target.closest('div[data-day], td[data-day]');
+        if (!targetElement) return;
 
-        const day = targetElement.dataset.day;
-        const time = targetElement.dataset.time;
-        if (!day || !time) return;
-
-        const slotId = targetElement.dataset.slotId || '';
-        const subjectId = targetElement.dataset.subjectId || '';
-        const teacherId = targetElement.dataset.teacherId || '';
-        const classroomId = targetElement.dataset.classroomId || '';
-        const classId = targetElement.dataset.classId;
+        const { day, time, classId, slotId, subjectId, teacherId, classroomId } = targetElement.dataset;
 
         modalDay.value = day;
         modalTime.value = time;
-        modalSlotId.value = slotId;
+        modalSlotId.value = slotId || '';
         modalClassId.value = classId;
         modalStartTime.value = time;
 
