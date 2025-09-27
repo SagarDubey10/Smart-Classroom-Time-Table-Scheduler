@@ -735,25 +735,31 @@ def export_timetable_pdf(class_name):
             max_lines = 1
             for day in DAYS:
                 cell_data_array = grid[day][slot['start_time']]
-                max_lines = max(max_lines, len(cell_data_array) * 3 if cell_data_array else 1)
+                if cell_data_array:
+                    max_lines = max(max_lines, sum([len(d['subject_name'].split('\n')) + 2 for d in cell_data_array]))
             
             row_height = max_lines * 4
+            if max_lines == 1 : row_height = 10
             
             y_before = pdf.get_y()
+            x_before = pdf.get_x()
+
             pdf.multi_cell(col_width, row_height, time_formatted, 1, 'C')
-            x_after_time = pdf.get_x() + col_width
+            
+            x_after_time = x_before + col_width
             pdf.set_y(y_before)
 
             for day in DAYS:
+                pdf.set_x(x_after_time)
                 cell_data_array = grid[day][slot['start_time']]
                 text = ""
                 if cell_data_array:
-                    text = "\n".join([f"{d['subject_name']}\n({d['teacher_name']})\n@{d['classroom_name']}" for d in cell_data_array])
+                    text = "\n\n".join([f"{d['subject_name']}\n({d['teacher_name']})\n@{d['classroom_name']}" for d in cell_data_array])
                 
-                pdf.set_xy(x_after_time, y_before)
-                pdf.multi_cell(col_width, 4, text, 1, 'C')
+                pdf.multi_cell(col_width, row_height, text, 1, 'C')
                 x_after_time += col_width
-            
+                pdf.set_y(y_before)
+
             pdf.set_y(y_before + row_height)
     
     pdf_bytes = pdf.output(dest='S').encode('latin-1')
