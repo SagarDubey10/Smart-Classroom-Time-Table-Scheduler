@@ -61,29 +61,51 @@
         </div>
         {% endif %}
 
-        <div class="card p-3 mb-4">
-            <h2 class="h4">Schedule Configuration</h2>
-            <p class="text-muted small">Define the time slots for lectures and breaks.</p>
-            <form id="scheduleConfigForm" action="{{ url_for('manage') }}" method="post">
-                <input type="hidden" name="form_name" value="schedule_config_form">
-                <div id="slotInputs">
-                    {% for slot in schedule_config %}
-                    <div class="input-group mb-2">
-                        <input type="hidden" name="config_id" value="{{ slot.config_id }}">
-                        <input type="time" class="form-control" name="start_time" value="{{ slot.start_time }}" required>
-                        <input type="time" class="form-control" name="end_time" value="{{ slot.end_time }}" required>
-                        <select class="form-select" name="is_break">
-                            <option value="0" {% if not slot.is_break %}selected{% endif %}>Lecture</option>
-                            <option value="1" {% if slot.is_break %}selected{% endif %}>Break</option>
-                        </select>
-                        <input type="text" class="form-control break-name-input" name="break_name" placeholder="Break Name (optional)" value="{{ slot.break_name or '' }}" {% if not slot.is_break %}disabled{% endif %}>
-                        <button type="button" class="btn btn-outline-danger remove-slot"><i class="bi bi-x-lg"></i></button>
-                    </div>
-                    {% endfor %}
+        <div class="row">
+            <div class="col-lg-8">
+                <div class="card p-3 mb-4">
+                    <h2 class="h4">Schedule Configuration</h2>
+                    <p class="text-muted small">Define the time slots for lectures, breaks, and reserved periods.</p>
+                    <form id="scheduleConfigForm" action="{{ url_for('manage') }}" method="post">
+                        <input type="hidden" name="form_name" value="schedule_config_form">
+                        <div id="slotInputs">
+                            {% for slot in schedule_config %}
+                            <div class="input-group mb-2">
+                                <input type="hidden" name="config_id" value="{{ slot.config_id }}">
+                                <input type="time" class="form-control" name="start_time" value="{{ slot.start_time }}" required>
+                                <input type="time" class="form-control" name="end_time" value="{{ slot.end_time }}" required>
+                                <select class="form-select" name="is_break">
+                                    <option value="0" {% if slot.is_break == 0 %}selected{% endif %}>Lecture</option>
+                                    <option value="1" {% if slot.is_break == 1 %}selected{% endif %}>Break</option>
+                                    <option value="2" {% if slot.is_break == 2 %}selected{% endif %}>Reserve</option>
+                                </select>
+                                <input type="text" class="form-control break-name-input" name="break_name" placeholder="Break Name (optional)" value="{{ slot.break_name or '' }}" {% if slot.is_break != 1 %}disabled{% endif %}>
+                                <button type="button" class="btn btn-outline-danger remove-slot"><i class="bi bi-x-lg"></i></button>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        <button type="button" class="btn btn-secondary mt-2" id="addSlotBtn"><i class="bi bi-plus-lg"></i> Add Slot</button>
+                        <button type="submit" class="btn btn-primary mt-3">Save Schedule</button>
+                    </form>
                 </div>
-                <button type="button" class="btn btn-secondary mt-2" id="addSlotBtn"><i class="bi bi-plus-lg"></i> Add Slot</button>
-                <button type="submit" class="btn btn-primary mt-3">Save Schedule</button>
-            </form>
+            </div>
+            <div class="col-lg-4">
+                <div class="card p-3 mb-4">
+                    <h2 class="h4">Generator Settings</h2>
+                    <form id="practicalPrefForm" action="{{ url_for('manage') }}" method="post">
+                        <input type="hidden" name="form_name" value="practical_pref_form">
+                        <div class="mb-3">
+                            <label for="practicalPreference" class="form-label">Practical Session Placement</label>
+                            <select id="practicalPreference" name="practical_preference" class="form-select">
+                                <option value="none" {% if practical_preference == 'none' %}selected{% endif %}>No Preference</option>
+                                <option value="morning" {% if practical_preference == 'morning' %}selected{% endif %}>Morning</option>
+                                <option value="afternoon" {% if practical_preference == 'afternoon' %}selected{% endif %}>Afternoon</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Save Settings</button>
+                    </form>
+                </div>
+            </div>
         </div>
 
         <div class="row">

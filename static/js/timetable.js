@@ -127,12 +127,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${data.slots_full.map(slot => {
       let timeFormatted = `${slot.start_time} - ${slot.end_time}`;
 
-      if (slot.is_break) {
+      if (slot.is_break === 1) { // Break
         return `<tr>
                     <td>${timeFormatted}</td>
                     <td colspan="${data.days.length}" class="break-slot">${slot.break_name}</td>
                 </tr>`;
+      } else if (slot.is_break === 2) { // Reserved
+        return `<tr>
+                    <td>${timeFormatted}</td>
+                    <td colspan="${data.days.length}" class="reserved-slot">Reserved Slot</td>
+                </tr>`;
       }
+
 
       return `<tr>
                 <td>${timeFormatted}</td>

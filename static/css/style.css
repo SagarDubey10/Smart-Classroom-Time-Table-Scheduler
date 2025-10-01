@@ -72,7 +72,8 @@ body {
     background-color: #f8f9fa;
 }
 
-.timetable-table td.break-slot {
+.timetable-table td.break-slot,
+.timetable-table td.reserved-slot {
     background-color: #F3F4F6;
     font-weight: 500;
     color: var(--light-text);

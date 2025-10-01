@@ -100,7 +100,13 @@ def init_db():
                 FOREIGN KEY(teacher_id) REFERENCES teachers(teacher_id),
                 UNIQUE(class_id, subject_id, batch_number)
             );
+            CREATE TABLE IF NOT EXISTS generation_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
         ''')
+        # Add default practical preference if not exists
+        cur.execute("INSERT OR IGNORE INTO generation_settings (key, value) VALUES ('practical_preference', 'none')")
         db.commit()
 
 def seed_sample_data():
@@ -166,15 +172,18 @@ def get_slot_times():
     cur.execute('SELECT * FROM schedule_config ORDER BY config_id')
     return cur.fetchall()
 
-def is_slot_available(day, time_start, time_end, teacher_id, classroom_id, class_id, batch_number=None):
+def is_slot_available(day, time_start, time_end, teacher_id, classroom_id, class_id, batch_number=None, is_lab=False):
     db = get_db()
     cur = db.cursor()
+
     # Teacher availability
     cur.execute('SELECT 1 FROM timetable_slots WHERE teacher_id = ? AND day = ? AND NOT (time_end <= ? OR time_start >= ?)', (teacher_id, day, time_start, time_end))
     if cur.fetchone(): return False
+
     # Classroom availability
     cur.execute('SELECT 1 FROM timetable_slots WHERE classroom_id = ? AND day = ? AND NOT (time_end <= ? OR time_start >= ?)', (classroom_id, day, time_start, time_end))
     if cur.fetchone(): return False
+    
     # Class/Batch availability
     if batch_number:
         # Check for this specific batch
@@ -191,11 +200,36 @@ def is_slot_available(day, time_start, time_end, teacher_id, classroom_id, class
         # Check if ANY batch of the class has a lab
         cur.execute('SELECT 1 FROM timetable_slots WHERE class_id = ? AND batch_number IS NOT NULL AND day = ? AND NOT (time_end <= ? OR time_start >= ?)', (class_id, day, time_start, time_end))
         if cur.fetchone(): return False
+        
+    # Teacher constraint: No two lectures on the same day for the same class
+    if not is_lab:
+        cur.execute('SELECT 1 FROM timetable_slots ts JOIN courses c ON ts.course_id = c.course_id WHERE ts.teacher_id = ? AND ts.class_id = ? AND ts.day = ? AND c.is_lab = 0', (teacher_id, class_id, day))
+        if cur.fetchone(): return False
+
+    # Teacher constraint: At least one lecture gap between lectures in different classes
+    all_slots = get_slot_times()
+    
+    current_slot_index = -1
+    for i, s in enumerate(all_slots):
+        if s['start_time'] == time_start:
+            current_slot_index = i
+            break
+            
+    if current_slot_index > 0:
+        prev_slot = all_slots[current_slot_index - 1]
+        cur.execute('SELECT 1 FROM timetable_slots WHERE teacher_id = ? AND day = ? AND time_start = ? AND class_id != ?', (teacher_id, day, prev_slot['start_time'], class_id))
+        if cur.fetchone(): return False
+
+    if current_slot_index < len(all_slots) -1 :
+        next_slot = all_slots[current_slot_index + 1]
+        cur.execute('SELECT 1 FROM timetable_slots WHERE teacher_id = ? AND day = ? AND time_start = ? AND class_id != ?', (teacher_id, day, next_slot['start_time'], class_id))
+        if cur.fetchone(): return False
+
     return True
 
 def schedule_session(course, day, start_slot_index, duration, classroom, batch_number=None, teacher_id=None):
     SLOTS = get_slot_times()
-    TEACHABLE_SLOTS = [(i, s) for i, s in enumerate(SLOTS) if not s['is_break']]
+    TEACHABLE_SLOTS = [(i, s) for i, s in enumerate(SLOTS) if s['is_break'] == 0] # 0 for lecture
     db = get_db()
     cur = db.cursor()
 
@@ -206,10 +240,9 @@ def schedule_session(course, day, start_slot_index, duration, classroom, batch_n
     start_time = SLOTS[start_time_idx]['start_time']
     end_time = SLOTS[end_time_idx]['end_time']
     
-    # Use provided teacher_id if available (for batch labs), otherwise use course default
     final_teacher_id = teacher_id if teacher_id is not None else course['teacher_id']
 
-    if is_slot_available(day, start_time, end_time, final_teacher_id, classroom['classroom_id'], course['class_id'], batch_number):
+    if is_slot_available(day, start_time, end_time, final_teacher_id, classroom['classroom_id'], course['class_id'], batch_number, course['is_lab']):
         cur.execute('''
             INSERT INTO timetable_slots (class_id, day, time_start, time_end, course_id, teacher_id, classroom_id, batch_number)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -236,20 +269,28 @@ def generate_timetable():
     
     teacher_prefs = {row['teacher_id']: row['preference'] for row in cur.execute('SELECT * FROM teacher_preferences').fetchall()}
     
-    # Fetch batch-teacher assignments
     batch_assignments = defaultdict(dict)
     assignments = cur.execute('SELECT * FROM batch_teacher_assignments').fetchall()
     for a in assignments:
         batch_assignments[(a['class_id'], a['subject_id'])][a['batch_number']] = a['teacher_id']
 
     SLOTS = get_slot_times()
-    TEACHABLE_SLOTS = [(i, s) for i, s in enumerate(SLOTS) if not s['is_break']]
+    TEACHABLE_SLOTS = [(i, s) for i, s in enumerate(SLOTS) if s['is_break'] == 0] # 0 for lecture
+
+    practical_pref = cur.execute("SELECT value FROM generation_settings WHERE key = 'practical_preference'").fetchone()['value']
     
-    # --- New Batch Scheduling Logic for Labs ---
     labs_to_schedule = []
     for course in courses:
         if course['is_lab']:
-            for _ in range(course['weekly_lectures'] // 2): # Each lab is 2 hours
+            # Each lab is typically 2 hours, so we divide by 2
+            num_practical_sessions = course['weekly_lectures']
+            if num_practical_sessions % 2 != 0:
+                print(f"Warning: Lab {course['subject_name']} has an odd number of weekly hours. Assuming {num_practical_sessions // 2} two-hour sessions.")
+                num_practical_sessions = num_practical_sessions // 2
+            else:
+                num_practical_sessions = num_practical_sessions // 2
+
+            for _ in range(num_practical_sessions):
                 for batch in range(1, course['num_batches'] + 1):
                     teacher_id = batch_assignments.get((course['class_id'], course['subject_id']), {}).get(batch, course['teacher_id'])
                     labs_to_schedule.append({'course': course, 'batch': batch, 'teacher_id': teacher_id})
@@ -262,9 +303,19 @@ def generate_timetable():
         teacher_id = lab_session['teacher_id']
         
         placed = False
-        for _ in range(200): # More attempts to find a slot
+        for _ in range(200):
             day = random.choice(DAYS)
-            i = random.randrange(len(TEACHABLE_SLOTS) - 1)
+            
+            # Filter slots based on practical preference
+            potential_slots = list(range(len(TEACHABLE_SLOTS) - 1))
+            if practical_pref == 'morning':
+                potential_slots = [i for i in potential_slots if i <= 2]
+            elif practical_pref == 'afternoon':
+                potential_slots = [i for i in potential_slots if i > 2]
+
+            if not potential_slots: continue
+            
+            i = random.choice(potential_slots)
             room = random.choice(lab_rooms)
             if schedule_session(course, day, i, 2, room, batch, teacher_id):
                 placed = True
@@ -272,8 +323,6 @@ def generate_timetable():
         if not placed:
             print(f"Warning: Could not schedule lab for {course['subject_name']} Batch {batch}")
 
-
-    # --- Scheduling Theory Lectures ---
     lectures_to_schedule = []
     for course in courses:
         if not course['is_lab']:
@@ -287,7 +336,7 @@ def generate_timetable():
         teacher_id = lecture['teacher_id']
         teacher_pref = teacher_prefs.get(teacher_id)
         
-        for _ in range(100): # Attempt to place each lecture
+        for _ in range(100):
             day = random.choice(DAYS)
             
             slots_to_try = list(range(len(TEACHABLE_SLOTS)))
@@ -307,7 +356,6 @@ def generate_timetable():
                 break
         if not placed:
             print(f"Warning: Could not schedule lecture for {lecture['subject_name']}")
-
             
     db.commit()
 
@@ -425,10 +473,8 @@ def manage():
             class_id = request.form.get('class_id')
             subject_id = request.form.get('subject_id')
             
-            # Delete existing assignments for this class/subject
             db.execute('DELETE FROM batch_teacher_assignments WHERE class_id = ? AND subject_id = ?', (class_id, subject_id))
             
-            # Add new assignments
             for key, teacher_id in request.form.items():
                 if key.startswith('teacher_batch_'):
                     batch_number = key.replace('teacher_batch_', '')
@@ -450,7 +496,6 @@ def manage():
             
             db.execute('BEGIN TRANSACTION')
             try:
-                # Delete removed slots
                 current_ids_rows = db.execute('SELECT config_id FROM schedule_config').fetchall()
                 current_ids = {row[0] for row in current_ids_rows}
                 submitted_ids = {int(i) for i in config_ids if i}
@@ -459,7 +504,6 @@ def manage():
                 if ids_to_delete:
                     db.execute(f'DELETE FROM schedule_config WHERE config_id IN ({",".join("?"*len(ids_to_delete))})', list(ids_to_delete))
                 
-                # Update existing and insert new slots
                 break_name_counter = 0
                 for i in range(len(start_times)):
                     config_id = config_ids[i]
@@ -468,14 +512,14 @@ def manage():
                     end_time = end_times[i]
                     
                     break_name = None
-                    if is_break:
+                    if is_break == 1: # Only for breaks
                         break_name = break_names[break_name_counter] if break_names[break_name_counter] else None
                         break_name_counter += 1
 
-                    if config_id: # Update existing
+                    if config_id:
                         db.execute('UPDATE schedule_config SET is_break=?, start_time=?, end_time=?, break_name=? WHERE config_id=?',
                                    (is_break, start_time, end_time, break_name, config_id))
-                    else: # Insert new
+                    else:
                         db.execute('INSERT INTO schedule_config (is_break, start_time, end_time, break_name) VALUES (?, ?, ?, ?)',
                                    (is_break, start_time, end_time, break_name))
                 
@@ -484,6 +528,13 @@ def manage():
             except Exception as e:
                 db.rollback()
                 flash(f'Error saving schedule: {e}', 'error')
+            return redirect(url_for('manage'))
+
+        elif form_name == 'practical_pref_form':
+            preference = request.form.get('practical_preference')
+            db.execute("UPDATE generation_settings SET value = ? WHERE key = 'practical_preference'", (preference,))
+            db.commit()
+            flash('Practical session preference saved!', 'success')
             return redirect(url_for('manage'))
 
         elif form_name.startswith('delete_'):
@@ -512,7 +563,6 @@ def manage():
                     flash(f'Error: Cannot delete {entity} because it is in use by another record.', 'error')
             return redirect(url_for('manage'))
 
-    # Validation for batches vs practicals
     warnings = []
     classes_list = cur.execute('SELECT * FROM classes').fetchall()
     for class_obj in classes_list:
@@ -533,7 +583,6 @@ def manage():
         JOIN classes cl ON c.class_id = cl.class_id
     ''').fetchall()
     
-    # Fetch existing batch-teacher assignments
     batch_assignments = defaultdict(lambda: defaultdict(dict))
     assignments = cur.execute('''
         SELECT b.*, t.name as teacher_name 
@@ -544,6 +593,7 @@ def manage():
         batch_assignments[a['class_id']][a['subject_id']][a['batch_number']] = a['teacher_id']
 
     schedule_config = get_slot_times()
+    practical_preference = cur.execute("SELECT value FROM generation_settings WHERE key = 'practical_preference'").fetchone()['value']
     
     return render_template('manage.html', 
                            teachers=teachers, 
@@ -553,7 +603,8 @@ def manage():
                            courses=courses, 
                            schedule_config=schedule_config,
                            warnings=warnings,
-                           batch_assignments=batch_assignments)
+                           batch_assignments=batch_assignments,
+                           practical_preference=practical_preference)
 
 @app.route('/api/timetable/generate', methods=['POST'])
 def api_generate():
@@ -571,7 +622,7 @@ def api_get_timetable(class_name):
     class_id = class_id_row['class_id']
     
     SLOTS = get_slot_times()
-    TEACHABLE_SLOTS = [s for s in SLOTS if not s['is_break']]
+    TEACHABLE_SLOTS = [s for s in SLOTS if s['is_break'] == 0]
     grid = {day: {slot['start_time']: [] for slot in TEACHABLE_SLOTS} for day in DAYS}
     
     slots_query = '''
@@ -587,7 +638,8 @@ def api_get_timetable(class_name):
     slots = cur.fetchall()
     
     for slot in slots:
-        grid[slot['day']][slot['time_start']].append(dict(slot))
+        if slot['time_start'] in grid[slot['day']]:
+            grid[slot['day']][slot['time_start']].append(dict(slot))
             
     cur.execute('SELECT teachers.teacher_id, teachers.name, teacher_preferences.preference FROM teachers LEFT JOIN teacher_preferences ON teachers.teacher_id = teacher_preferences.teacher_id')
     teachers = [dict(row) for row in cur.fetchall()]
@@ -684,7 +736,7 @@ def get_timetable_data_for_export(class_name):
     class_id = class_id_row['class_id']
 
     slots_full = get_slot_times()
-    teachable_slots = [s for s in slots_full if not s['is_break']]
+    teachable_slots = [s for s in slots_full if s['is_break'] == 0]
     grid = {day: {slot['start_time']: [] for slot in teachable_slots} for day in DAYS}
 
     slots_query = '''
@@ -700,7 +752,8 @@ def get_timetable_data_for_export(class_name):
     slots = cur.fetchall()
 
     for slot in slots:
-        grid[slot['day']][slot['time_start']].append(dict(slot))
+        if slot['time_start'] in grid[slot['day']]:
+            grid[slot['day']][slot['time_start']].append(dict(slot))
     
     return grid, slots_full
 
@@ -727,14 +780,18 @@ def export_timetable_pdf(class_name):
     pdf.set_font('Arial', '', 8)
     for slot in slots_full:
         time_formatted = f"{slot['start_time']} - {slot['end_time']}"
-        if slot['is_break']:
+        if slot['is_break'] == 1: # Break
             row_height = 10
             pdf.cell(col_width, row_height, time_formatted, 1, 0, 'C')
             pdf.cell(col_width * len(DAYS), row_height, slot['break_name'], 1, 1, 'C')
-        else:
+        elif slot['is_break'] == 2: # Reserve
+            row_height = 10
+            pdf.cell(col_width, row_height, time_formatted, 1, 0, 'C')
+            pdf.cell(col_width * len(DAYS), row_height, "Reserved Slot", 1, 1, 'C')
+        else: # Lecture
             max_lines = 1
             for day in DAYS:
-                cell_data_array = grid[day][slot['start_time']]
+                cell_data_array = grid.get(day, {}).get(slot['start_time'], [])
                 if cell_data_array:
                     max_lines = max(max_lines, sum([len(d['subject_name'].split('\n')) + 2 for d in cell_data_array]))
             
@@ -751,7 +808,7 @@ def export_timetable_pdf(class_name):
 
             for day in DAYS:
                 pdf.set_x(x_after_time)
-                cell_data_array = grid[day][slot['start_time']]
+                cell_data_array = grid.get(day, {}).get(slot['start_time'], [])
                 text = ""
                 if cell_data_array:
                     text = "\n\n".join([f"{d['subject_name']}\n({d['teacher_name']})\n@{d['classroom_name']}" for d in cell_data_array])
@@ -778,10 +835,12 @@ def export_timetable_excel(class_name):
     for day in DAYS:
         day_column = []
         for slot in slots_full:
-            if slot['is_break']:
+            if slot['is_break'] == 1:
                 day_column.append(slot['break_name'])
+            elif slot['is_break'] == 2:
+                day_column.append("Reserved Slot")
             else:
-                cell_data_array = grid[day][slot['start_time']]
+                cell_data_array = grid.get(day, {}).get(slot['start_time'], [])
                 if cell_data_array:
                     day_column.append("\n".join([f"{d['subject_name']} ({d['teacher_name']}) @{d['classroom_name']}" for d in cell_data_array]))
                 else:
@@ -806,5 +865,5 @@ def export_timetable_excel(class_name):
 if __name__ == '__main__':
     with app.app_context():
         init_db()
-        seed_sample_data()
+        # seed_sample_data() # Use this for a fresh start
     app.run(debug=True)
