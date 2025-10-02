@@ -27,9 +27,15 @@
                         <a class="nav-link active" aria-current="page" href="{{ url_for('manage') }}">Manage Data</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#">
-                            <i class="bi bi-person-circle"></i> Admin
-                        </a>
+                        {% if session.admin_id %}
+                            <a class="nav-link" href="{{ url_for('admin_logout') }}">
+                                <i class="bi bi-box-arrow-right"></i> Logout ({{ session.admin_username }})
+                            </a>
+                        {% else %}
+                            <a class="nav-link" href="{{ url_for('admin_login') }}">
+                                <i class="bi bi-person-circle"></i> Admin
+                            </a>
+                        {% endif %}
                     </li>
                 </ul>
             </div>
