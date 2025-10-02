@@ -1,27 +1,100 @@
-html,
-body {
-    height: 100%;
-}
-
-body.login-body {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: var(--light-bg);
-}
-
-.login-container {
+.login-body {
+    font-family: 'Inter', sans-serif;
     display: flex;
     align-items: center;
     justify-content: center;
     height: 100vh;
+    margin: 0;
+    background-color: #f0f2f5;
+}
+
+.login-container {
+    width: 100%;
+    padding: 1rem;
 }
 
 .login-card {
     width: 100%;
     max-width: 400px;
-    padding: 2rem;
-    background-color: var(--white-color);
-    border-radius: 0.75rem;
-    box-shadow: var(--shadow);
+    margin: auto;
+    padding: 2.5rem;
+    background-color: #ffffff;
+    border: 1px solid #dcdfe3;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    transition: all 0.3s ease-in-out;
+}
+
+.login-card:hover {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+}
+
+.login-icon {
+    font-size: 2.5rem;
+    color: #4a5568;
+}
+
+.login-card h3 {
+    font-weight: 600;
+    color: #2d3748;
+}
+
+.form-group label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #4a5568;
+    margin-bottom: 0.5rem;
+}
+
+.input-group {
+    border: 1px solid #dcdfe3;
+    border-radius: 6px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.input-group:focus-within {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+.input-group-text {
+    background-color: #f8f9fa;
+    border: none;
+    color: #718096;
+    border-radius: 6px 0 0 6px;
+}
+
+.form-control {
+    border: none;
+    box-shadow: none;
+    font-weight: 500;
+    color: #2d3748;
+}
+
+.form-control:focus {
+    box-shadow: none;
+}
+
+.login-btn {
+    padding: 0.75rem;
+    font-size: 1rem;
+    font-weight: 600;
+    border-radius: 6px;
+    color: #ffffff;
+    background-color: #3b82f6;
+    border: none;
+    transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.login-btn:hover {
+    background-color: #2563eb;
+    transform: translateY(-2px);
+}
+
+.alert-danger {
+    background-color: #fef2f2;
+    color: #991b1b;
+    border-color: #fecaca;
+    font-size: 0.9rem;
 }

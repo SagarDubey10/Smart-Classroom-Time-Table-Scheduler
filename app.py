@@ -12,7 +12,7 @@ from functools import wraps
 app = Flask(__name__)
 DB_PATH = 'timetable.db'
 DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
-app.secret_key = 'your_very_secret_key_for_sessions'
+app.secret_key = 'your_very_secret_key_for_sessions' # Changed for security
 
 # --- DATABASE HELPERS ---
 def get_db():
@@ -183,6 +183,7 @@ def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'admin_id' not in session:
+            flash('You need to be logged in to access this page.', 'warning')
             return redirect(url_for('admin_login'))
         return f(*args, **kwargs)
     return decorated_function
@@ -198,28 +199,37 @@ def is_slot_available(day, time_start, time_end, teacher_id, classroom_id, class
     db = get_db()
     cur = db.cursor()
 
+    # Teacher availability
     cur.execute('SELECT 1 FROM timetable_slots WHERE teacher_id = ? AND day = ? AND NOT (time_end <= ? OR time_start >= ?)', (teacher_id, day, time_start, time_end))
     if cur.fetchone(): return False
 
+    # Classroom availability
     cur.execute('SELECT 1 FROM timetable_slots WHERE classroom_id = ? AND day = ? AND NOT (time_end <= ? OR time_start >= ?)', (classroom_id, day, time_start, time_end))
     if cur.fetchone(): return False
     
+    # Class/Batch availability
     if batch_number:
+        # Check for this specific batch
         cur.execute('SELECT 1 FROM timetable_slots WHERE class_id = ? AND batch_number = ? AND day = ? AND NOT (time_end <= ? OR time_start >= ?)', (class_id, batch_number, day, time_start, time_end))
         if cur.fetchone(): return False
         
+        # Also check if there's a theory lecture for the whole class at the same time
         cur.execute('SELECT 1 FROM timetable_slots WHERE class_id = ? AND batch_number IS NULL AND day = ? AND NOT (time_end <= ? OR time_start >= ?)', (class_id, day, time_start, time_end))
         if cur.fetchone(): return False
-    else:
+    else: # This is a theory lecture
+        # Check if the whole class has a theory lecture
         cur.execute('SELECT 1 FROM timetable_slots WHERE class_id = ? AND batch_number IS NULL AND day = ? AND NOT (time_end <= ? OR time_start >= ?)', (class_id, day, time_start, time_end))
         if cur.fetchone(): return False
+        # Check if ANY batch of the class has a lab
         cur.execute('SELECT 1 FROM timetable_slots WHERE class_id = ? AND batch_number IS NOT NULL AND day = ? AND NOT (time_end <= ? OR time_start >= ?)', (class_id, day, time_start, time_end))
         if cur.fetchone(): return False
         
+    # Teacher constraint: No two lectures on the same day for the same class
     if not is_lab:
         cur.execute('SELECT 1 FROM timetable_slots ts JOIN courses c ON ts.course_id = c.course_id WHERE ts.teacher_id = ? AND ts.class_id = ? AND ts.day = ? AND c.is_lab = 0', (teacher_id, class_id, day))
         if cur.fetchone(): return False
 
+    # Teacher constraint: At least one lecture gap between lectures in different classes
     all_slots = get_slot_times()
     
     current_slot_index = -1
@@ -242,7 +252,7 @@ def is_slot_available(day, time_start, time_end, teacher_id, classroom_id, class
 
 def schedule_session(course, day, start_slot_index, duration, classroom, batch_number=None, teacher_id=None):
     SLOTS = get_slot_times()
-    TEACHABLE_SLOTS = [(i, s) for i, s in enumerate(SLOTS) if s['is_break'] == 0]
+    TEACHABLE_SLOTS = [(i, s) for i, s in enumerate(SLOTS) if s['is_break'] == 0] # 0 for lecture
     db = get_db()
     cur = db.cursor()
 
@@ -288,13 +298,14 @@ def generate_timetable():
         batch_assignments[(a['class_id'], a['subject_id'])][a['batch_number']] = a['teacher_id']
 
     SLOTS = get_slot_times()
-    TEACHABLE_SLOTS = [(i, s) for i, s in enumerate(SLOTS) if s['is_break'] == 0]
+    TEACHABLE_SLOTS = [(i, s) for i, s in enumerate(SLOTS) if s['is_break'] == 0] # 0 for lecture
 
     practical_pref = cur.execute("SELECT value FROM generation_settings WHERE key = 'practical_preference'").fetchone()['value']
     
     labs_to_schedule = []
     for course in courses:
         if course['is_lab']:
+            # Each lab is typically 2 hours, so we divide by 2
             num_practical_sessions = course['weekly_lectures']
             if num_practical_sessions % 2 != 0:
                 print(f"Warning: Lab {course['subject_name']} has an odd number of weekly hours. Assuming {num_practical_sessions // 2} two-hour sessions.")
@@ -318,6 +329,7 @@ def generate_timetable():
         for _ in range(200):
             day = random.choice(DAYS)
             
+            # Filter slots based on practical preference
             potential_slots = list(range(len(TEACHABLE_SLOTS) - 1))
             if practical_pref == 'morning':
                 potential_slots = [i for i in potential_slots if i <= 2]
@@ -414,6 +426,9 @@ def index():
 
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
+    if 'admin_id' in session:
+        return redirect(url_for('manage'))
+
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
@@ -427,14 +442,14 @@ def admin_login():
             session['admin_username'] = admin['username']
             return redirect(url_for('manage'))
         else:
-            flash('Invalid username or password', 'danger')
+            flash('Invalid username or password.', 'danger')
 
     return render_template('login.html')
 
 @app.route('/admin/logout')
 def admin_logout():
     session.clear()
-    flash('You have been logged out.', 'success')
+    flash('You have been successfully logged out.', 'success')
     return redirect(url_for('admin_login'))
 
 @app.route('/manage', methods=['GET', 'POST'])
@@ -549,7 +564,7 @@ def manage():
                     end_time = end_times[i]
                     
                     break_name = None
-                    if is_break == 1:
+                    if is_break == 1: # Only for breaks
                         break_name = break_names[break_name_counter] if break_names[break_name_counter] else None
                         break_name_counter += 1
 
@@ -820,15 +835,15 @@ def export_timetable_pdf(class_name):
     pdf.set_font('Arial', '', 8)
     for slot in slots_full:
         time_formatted = f"{slot['start_time']} - {slot['end_time']}"
-        if slot['is_break'] == 1:
+        if slot['is_break'] == 1: # Break
             row_height = 10
             pdf.cell(col_width, row_height, time_formatted, 1, 0, 'C')
             pdf.cell(col_width * len(DAYS), row_height, slot['break_name'], 1, 1, 'C')
-        elif slot['is_break'] == 2:
+        elif slot['is_break'] == 2: # Reserve
             row_height = 10
             pdf.cell(col_width, row_height, time_formatted, 1, 0, 'C')
             pdf.cell(col_width * len(DAYS), row_height, "Reserved Slot", 1, 1, 'C')
-        else:
+        else: # Lecture
             max_lines = 1
             for day in DAYS:
                 cell_data_array = grid.get(day, {}).get(slot['start_time'], [])
@@ -905,5 +920,5 @@ def export_timetable_excel(class_name):
 if __name__ == '__main__':
     with app.app_context():
         init_db()
-        # seed_sample_data()
+        # seed_sample_data() # Use this for a fresh start
     app.run(debug=True)
