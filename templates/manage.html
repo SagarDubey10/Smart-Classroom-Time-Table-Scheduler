@@ -292,6 +292,15 @@
                             <input type="checkbox" id="isLabCheckbox" name="is_lab_checkbox" class="form-check-input">
                             <label class="form-check-label" for="isLabCheckbox">Is this a Lab/Practical?</label>
                         </div>
+                        <div class="mb-2" id="lab-selection" style="display: none;">
+                            <label for="labClassroom" class="form-label">Select Lab</label>
+                            <select id="labClassroom" name="lab_classroom" class="form-select">
+                                <option value="">Select a Lab</option>
+                                {% for lab in lab_classrooms %}
+                                    <option value="{{ lab.classroom_id }}">{{ lab.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
                         <button type="submit" class="btn btn-primary w-100">Add Course Assignment</button>
                     </form>
                     <h5 class="mt-3">Existing Assignments</h5>
@@ -352,50 +361,66 @@ document.addEventListener('DOMContentLoaded', function() {
     const subjectSelect = document.getElementById('batchSubjectSelect');
     const teacherInputsContainer = document.getElementById('batchTeacherInputs');
     const saveButton = document.querySelector('#batchTeacherForm button[type="submit"]');
+    const isLabCheckbox = document.getElementById('isLabCheckbox');
+    const labSelectionDiv = document.getElementById('lab-selection');
 
-    classSelect.addEventListener('change', function() {
-        const selectedClassId = this.value;
-        const subjectOptions = subjectSelect.querySelectorAll('.subject-option');
-        
-        subjectSelect.value = '';
-        teacherInputsContainer.innerHTML = '';
-        saveButton.style.display = 'none';
-
-        subjectOptions.forEach(opt => {
-            opt.style.display = (opt.dataset.class === selectedClassId) ? 'block' : 'none';
-        });
-    });
-
-    subjectSelect.addEventListener('change', function() {
-        const selectedClassOption = classSelect.options[classSelect.selectedIndex];
-        const numBatches = parseInt(selectedClassOption.dataset.batches, 10);
-        const selectedClassId = classSelect.value;
-        const selectedSubjectId = this.value;
-        
-        teacherInputsContainer.innerHTML = ''; 
-
-        if (numBatches > 1 && selectedClassId && selectedSubjectId) {
-            for (let i = 1; i <= numBatches; i++) {
-                const div = document.createElement('div');
-                div.classList.add('mb-2', 'row', 'align-items-center');
-                div.innerHTML = `
-                    <label class="col-sm-3 col-form-label">Batch ${i} Teacher:</label>
-                    <div class="col-sm-9">
-                        <select name="teacher_batch_${i}" class="form-select">
-                            <option value="">Select Teacher</option>
-                            {% for teacher in teachers %}
-                            <option value="{{ teacher.teacher_id }}">{{ teacher.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                `;
-                teacherInputsContainer.appendChild(div);
+    if(isLabCheckbox) {
+        isLabCheckbox.addEventListener('change', function() {
+            if (this.checked) {
+                labSelectionDiv.style.display = 'block';
+            } else {
+                labSelectionDiv.style.display = 'none';
             }
-            saveButton.style.display = 'block';
-        } else {
+        });
+    }
+
+    if(classSelect) {
+        classSelect.addEventListener('change', function() {
+            const selectedClassId = this.value;
+            const subjectOptions = subjectSelect.querySelectorAll('.subject-option');
+            
+            subjectSelect.value = '';
+            teacherInputsContainer.innerHTML = '';
             saveButton.style.display = 'none';
-        }
-    });
+
+            subjectOptions.forEach(opt => {
+                opt.style.display = (opt.dataset.class === selectedClassId) ? 'block' : 'none';
+            });
+        });
+    }
+
+    if(subjectSelect) {
+        subjectSelect.addEventListener('change', function() {
+            const selectedClassOption = classSelect.options[classSelect.selectedIndex];
+            const numBatches = parseInt(selectedClassOption.dataset.batches, 10);
+            const selectedClassId = classSelect.value;
+            const selectedSubjectId = this.value;
+            
+            teacherInputsContainer.innerHTML = ''; 
+
+            if (numBatches > 1 && selectedClassId && selectedSubjectId) {
+                for (let i = 1; i <= numBatches; i++) {
+                    const div = document.createElement('div');
+                    div.classList.add('mb-2', 'row', 'align-items-center');
+                    div.innerHTML = `
+                        <label class="col-sm-3 col-form-label">Batch ${i} Teacher:</label>
+                        <div class="col-sm-9">
+                            <select name="teacher_batch_${i}" class="form-select">
+                                <option value="">Select Teacher</option>
+                                {% for teacher in teachers %}
+                                <option value="{{ teacher.teacher_id }}">{{ teacher.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    `;
+                    teacherInputsContainer.appendChild(div);
+                }
+                saveButton.style.display = 'block';
+            } else {
+                saveButton.style.display = 'none';
+            }
+        });
+    }
 });
 </script>
 <script src="{{ url_for('static', filename='js/manage.js') }}"></script>

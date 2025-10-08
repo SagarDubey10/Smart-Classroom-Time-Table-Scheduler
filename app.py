@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, jsonify, g, redirect, url_for, flash, send_file, session
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 import random
 from collections import defaultdict
 import pandas as pd
@@ -12,7 +12,8 @@ from functools import wraps
 app = Flask(__name__)
 DB_PATH = 'timetable.db'
 DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
-app.secret_key = 'your_very_secret_key_for_sessions' # Changed for security
+app.secret_key = 'your_very_secret_key_for_sessions'
+app.permanent_session_lifetime = timedelta(days=30) # Added for "Remember Me"
 
 # --- DATABASE HELPERS ---
 def get_db():
@@ -65,9 +66,11 @@ def init_db():
                 teacher_id INTEGER,
                 weekly_lectures INTEGER NOT NULL,
                 is_lab INTEGER NOT NULL DEFAULT 0,
+                classroom_id INTEGER,
                 FOREIGN KEY (class_id) REFERENCES classes(class_id),
                 FOREIGN KEY (subject_id) REFERENCES subjects(subject_id),
-                FOREIGN KEY (teacher_id) REFERENCES teachers(teacher_id)
+                FOREIGN KEY (teacher_id) REFERENCES teachers(teacher_id),
+                FOREIGN KEY (classroom_id) REFERENCES classrooms(classroom_id)
             );
             CREATE TABLE IF NOT EXISTS timetable_slots (
                 slot_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -339,8 +342,8 @@ def generate_timetable():
             if not potential_slots: continue
             
             i = random.choice(potential_slots)
-            room = random.choice(lab_rooms)
-            if schedule_session(course, day, i, 2, room, batch, teacher_id):
+            room = cur.execute('SELECT * FROM classrooms WHERE classroom_id = ?', (course['classroom_id'],)).fetchone()
+            if room and schedule_session(course, day, i, 2, room, batch, teacher_id):
                 placed = True
                 break
         if not placed:
@@ -511,10 +514,11 @@ def manage():
             subject_id = request.form['course_subject']
             teacher_id = request.form['course_teacher']
             weekly_lectures = request.form['weekly_lectures']
-            is_lab = int(request.form.get('is_lab_checkbox') == 'on')
+            is_lab = 1 if 'is_lab_checkbox' in request.form else 0
+            classroom_id = request.form.get('lab_classroom') if is_lab else None
             try:
-                db.execute('INSERT INTO courses (class_id, subject_id, teacher_id, weekly_lectures, is_lab) VALUES (?, ?, ?, ?, ?)',
-                           (class_id, subject_id, teacher_id, weekly_lectures, is_lab))
+                db.execute('INSERT INTO courses (class_id, subject_id, teacher_id, weekly_lectures, is_lab, classroom_id) VALUES (?, ?, ?, ?, ?, ?)',
+                           (class_id, subject_id, teacher_id, weekly_lectures, is_lab, classroom_id))
                 db.commit()
                 flash('Course assignment added successfully!', 'success')
             except sqlite3.IntegrityError:
@@ -620,7 +624,7 @@ def manage():
     for class_obj in classes_list:
         num_batches = class_obj['num_batches']
         if num_batches > 1:
-            practicals_count = cur.execute('SELECT COUNT(*) FROM courses WHERE class_id = ? AND is_lab = 1', (class_obj['class_id'],)).fetchone()[0]
+            practicals_count = cur.execute('SELECT COUNT(DISTINCT subject_id) FROM courses WHERE class_id = ? AND is_lab = 1', (class_obj['class_id'],)).fetchone()[0]
             if practicals_count > 0 and num_batches > practicals_count:
                  warnings.append(f"For class '{class_obj['name']}', the number of batches ({num_batches}) is greater than the number of assigned practicals ({practicals_count}). Some batches may miss practicals.")
 
@@ -646,6 +650,7 @@ def manage():
 
     schedule_config = get_slot_times()
     practical_preference = cur.execute("SELECT value FROM generation_settings WHERE key = 'practical_preference'").fetchone()['value']
+    lab_classrooms = cur.execute('SELECT * FROM classrooms WHERE is_lab = 1').fetchall()
     
     return render_template('manage.html', 
                            teachers=teachers, 
@@ -656,7 +661,8 @@ def manage():
                            schedule_config=schedule_config,
                            warnings=warnings,
                            batch_assignments=batch_assignments,
-                           practical_preference=practical_preference)
+                           practical_preference=practical_preference,
+                           lab_classrooms=lab_classrooms)
 
 @app.route('/api/timetable/generate', methods=['POST'])
 @login_required
@@ -912,7 +918,7 @@ def export_timetable_excel(class_name):
             series = df[col]
             max_len = max((series.astype(str).map(len).max(), len(str(series.name)))) + 2
             worksheet.set_column(idx, idx, max_len)
-
+ 
     output.seek(0)
     
     return send_file(output, as_attachment=True, download_name=f'{class_name}_timetable.xlsx', mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -920,5 +926,5 @@ def export_timetable_excel(class_name):
 if __name__ == '__main__':
     with app.app_context():
         init_db()
-        # seed_sample_data() # Use this for a fresh start
+        #seed_sample_data() # Use this for a fresh start
     app.run(debug=True)
