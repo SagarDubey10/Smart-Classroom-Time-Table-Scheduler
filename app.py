@@ -13,7 +13,7 @@ app = Flask(__name__)
 DB_PATH = 'timetable.db'
 DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
 app.secret_key = 'your_very_secret_key_for_sessions'
-app.permanent_session_lifetime = timedelta(days=30) # Added for "Remember Me"
+app.permanent_session_lifetime = timedelta(days=30)
 
 # --- DATABASE HELPERS ---
 def get_db():
@@ -162,8 +162,6 @@ def generate_timetable():
     
     theory_rooms = [r for r in cur.execute('SELECT * FROM classrooms WHERE is_lab = 0').fetchall()]
     
-    teacher_prefs = {row['teacher_id']: row['preference'] for row in cur.execute('SELECT * FROM teacher_preferences').fetchall()}
-    
     batch_assignments = defaultdict(dict)
     for a in cur.execute('SELECT * FROM batch_teacher_assignments').fetchall():
         batch_assignments[(a['class_id'], a['subject_id'])][a['batch_number']] = a['teacher_id']
@@ -171,100 +169,106 @@ def generate_timetable():
     SLOTS = get_slot_times()
     TEACHABLE_SLOTS = [s for s in SLOTS if s['is_break'] == 0]
     
-    # --- IN-MEMORY GRID ---
-    grid = {day: {slot['start_time']: {'teacher': None, 'classroom': None, 'batches': set()} for slot in TEACHABLE_SLOTS} for day in DAYS}
+    grid = {day: {slot['start_time']: {'teachers': set(), 'classrooms': set(), 'batches': defaultdict(set)} for slot in TEACHABLE_SLOTS} for day in DAYS}
 
-    # Helper to check the in-memory grid
-    def is_block_free(day, start_slot_index, duration, teacher_id, classroom_id, class_id, batch_number=None):
+    def is_block_free(day, start_idx, duration, teacher_id, classroom_id, class_id, batch_number=None):
+        if start_idx + duration > len(TEACHABLE_SLOTS):
+            return False
         for i in range(duration):
-            slot_time = TEACHABLE_SLOTS[start_slot_index + i]['start_time']
-            slot_info = grid[day][slot_time]
+            slot_time = TEACHABLE_SLOTS[start_idx + i]['start_time']
+            slot = grid[day][slot_time]
             
-            # Check teacher, classroom, and batch availability
-            if slot_info['teacher'] == teacher_id: return False
-            if slot_info['classroom'] == classroom_id: return False
+            if teacher_id in slot['teachers'] or classroom_id in slot['classrooms']:
+                return False
             
-            if batch_number: # Practical
-                if batch_number in slot_info['batches']: return False # This batch is busy
-                if f"class_{class_id}" in slot_info['batches']: return False # The whole class is busy
-            else: # Theory
-                if len(slot_info['batches']) > 0: return False # Any batch is busy
-                
+            class_batches = slot['batches'][class_id]
+            if batch_number: # Practical check
+                if batch_number in class_batches or 0 in class_batches: # 0 represents the whole class
+                    return False
+            else: # Theory check
+                if len(class_batches) > 0:
+                    return False
         return True
 
-    # Helper to book a slot in the in-memory grid
-    def book_block(day, start_slot_index, duration, teacher_id, classroom_id, class_id, batch_number=None):
+    def book_block(day, start_idx, duration, teacher_id, classroom_id, class_id, batch_number=None):
         for i in range(duration):
-            slot_time = TEACHABLE_SLOTS[start_slot_index + i]['start_time']
-            grid[day][slot_time]['teacher'] = teacher_id
-            grid[day][slot_time]['classroom'] = classroom_id
+            slot_time = TEACHABLE_SLOTS[start_idx + i]['start_time']
+            slot = grid[day][slot_time]
+            slot['teachers'].add(teacher_id)
+            slot['classrooms'].add(classroom_id)
             if batch_number:
-                grid[day][slot_time]['batches'].add(batch_number)
+                slot['batches'][class_id].add(batch_number)
             else:
-                grid[day][slot_time]['batches'].add(f"class_{class_id}")
-    
-    # --- Schedule Practicals First ---
-    labs_to_schedule = []
+                slot['batches'][class_id].add(0) 
+
+    sessions_to_schedule = []
     for course in courses:
         if course['is_lab']:
-            for _ in range(course['weekly_lectures'] // 2):
+            num_practical_blocks = course['weekly_lectures'] // 2
+            for _ in range(num_practical_blocks):
                 for batch in range(1, course['num_batches'] + 1):
-                    teacher_id = batch_assignments.get((course['class_id'], course['subject_id']), {}).get(batch, course['teacher_id'])
-                    labs_to_schedule.append({'course': course, 'batch': batch, 'teacher_id': teacher_id})
+                    sessions_to_schedule.append({'type': 'practical', 'course': course, 'batch': batch, 'duration': 2})
+        else:
+            num_double_slots = course['weekly_lectures'] // 2
+            num_single_slots = course['weekly_lectures'] % 2
+            for _ in range(num_double_slots):
+                sessions_to_schedule.append({'type': 'lecture', 'course': course, 'duration': 2})
+            for _ in range(num_single_slots):
+                sessions_to_schedule.append({'type': 'lecture', 'course': course, 'duration': 1})
     
-    random.shuffle(labs_to_schedule)
+    random.shuffle(sessions_to_schedule)
 
-    for lab_session in labs_to_schedule:
-        course, batch, teacher_id = lab_session['course'], lab_session['batch'], lab_session['teacher_id']
+    practicals = [s for s in sessions_to_schedule if s['type'] == 'practical']
+    for session in practicals:
+        course, batch, duration = session['course'], session['batch'], session['duration']
+        teacher_id = batch_assignments.get((course['class_id'], course['subject_id']), {}).get(batch, course['teacher_id'])
         lab_classroom = cur.execute('SELECT * FROM classrooms WHERE classroom_id = ?', (course['classroom_id'],)).fetchone()
 
         if not lab_classroom: continue
         
         placed = False
-        for _ in range(200):
-            day = random.choice(DAYS)
-            slot_index = random.choice(range(len(TEACHABLE_SLOTS) - 1))
-            
-            if is_block_free(day, slot_index, 2, teacher_id, lab_classroom['classroom_id'], course['class_id'], batch):
-                book_block(day, slot_index, 2, teacher_id, lab_classroom['classroom_id'], course['class_id'], batch)
-                start_time = TEACHABLE_SLOTS[slot_index]['start_time']
-                end_time = TEACHABLE_SLOTS[slot_index + 1]['end_time']
-                cur.execute('INSERT INTO timetable_slots (class_id, day, time_start, time_end, course_id, teacher_id, classroom_id, batch_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                            (course['class_id'], day, start_time, end_time, course['course_id'], teacher_id, lab_classroom['classroom_id'], batch))
-                placed = True
-                break
-        if not placed:
-             print(f"Warning: Could not schedule lab for {course['subject_name']} Batch {batch}")
-
-    # --- Schedule Theory Lectures ---
-    lectures_to_schedule = []
-    for course in courses:
-        if not course['is_lab']:
-            for _ in range(course['weekly_lectures']):
-                lectures_to_schedule.append(course)
-    
-    random.shuffle(lectures_to_schedule)
-    
-    for lecture in lectures_to_schedule:
-        placed = False
-        teacher_id = lecture['teacher_id']
+        possible_slots = list(range(len(TEACHABLE_SLOTS) - (duration - 1)))
+        random.shuffle(possible_slots)
         
-        for _ in range(100):
-            day = random.choice(DAYS)
-            slot_index = random.choice(range(len(TEACHABLE_SLOTS)))
-            room = random.choice(theory_rooms)
-            
-            if is_block_free(day, slot_index, 1, teacher_id, room['classroom_id'], lecture['class_id']):
-                book_block(day, slot_index, 1, teacher_id, room['classroom_id'], lecture['class_id'])
-                start_time = TEACHABLE_SLOTS[slot_index]['start_time']
-                end_time = TEACHABLE_SLOTS[slot_index]['end_time']
-                cur.execute('INSERT INTO timetable_slots (class_id, day, time_start, time_end, course_id, teacher_id, classroom_id, batch_number) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)',
-                            (lecture['class_id'], day, start_time, end_time, lecture['course_id'], teacher_id, room['classroom_id']))
-                placed = True
-                break
+        for day in random.sample(DAYS, len(DAYS)):
+            for slot_idx in possible_slots:
+                if is_block_free(day, slot_idx, duration, teacher_id, lab_classroom['classroom_id'], course['class_id'], batch):
+                    book_block(day, slot_idx, duration, teacher_id, lab_classroom['classroom_id'], course['class_id'], batch)
+                    start_time = TEACHABLE_SLOTS[slot_idx]['start_time']
+                    end_time = TEACHABLE_SLOTS[slot_idx + duration - 1]['end_time']
+                    cur.execute('INSERT INTO timetable_slots (class_id, day, time_start, time_end, course_id, teacher_id, classroom_id, batch_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                                (course['class_id'], day, start_time, end_time, course['course_id'], teacher_id, lab_classroom['classroom_id'], batch))
+                    placed = True
+                    break
+            if placed: break
         if not placed:
-            print(f"Warning: Could not schedule lecture for {lecture['subject_name']}")
-            
+            print(f"Warning: Could not schedule practical for {course['subject_name']} - Batch {batch}")
+
+    lectures = [s for s in sessions_to_schedule if s['type'] == 'lecture']
+    for session in lectures:
+        course, duration = session['course'], session['duration']
+        teacher_id = course['teacher_id']
+        
+        placed = False
+        possible_slots = list(range(len(TEACHABLE_SLOTS) - (duration - 1)))
+        random.shuffle(possible_slots)
+
+        for day in random.sample(DAYS, len(DAYS)):
+            for slot_idx in possible_slots:
+                if not theory_rooms: break
+                room = random.choice(theory_rooms)
+                if is_block_free(day, slot_idx, duration, teacher_id, room['classroom_id'], course['class_id']):
+                    book_block(day, slot_idx, duration, teacher_id, room['classroom_id'], course['class_id'])
+                    start_time = TEACHABLE_SLOTS[slot_idx]['start_time']
+                    end_time = TEACHABLE_SLOTS[slot_idx + duration - 1]['end_time']
+                    cur.execute('INSERT INTO timetable_slots (class_id, day, time_start, time_end, course_id, teacher_id, classroom_id, batch_number) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)',
+                                (course['class_id'], day, start_time, end_time, course['course_id'], teacher_id, room['classroom_id']))
+                    placed = True
+                    break
+            if placed: break
+        if not placed:
+            print(f"Warning: Could not schedule lecture for {course['subject_name']}")
+
     db.commit()
 
 
@@ -428,14 +432,24 @@ def manage():
                     flash(f'Error: Cannot delete {entity} because it is in use by another record.', 'error')
             return redirect(url_for('manage'))
 
-    # CORRECTED VALIDATION WARNING LOGIC
     warnings = []
     classes_list = cur.execute('SELECT * FROM classes').fetchall()
+    all_courses = cur.execute('SELECT * FROM courses WHERE is_lab = 1').fetchall()
+
     for class_obj in classes_list:
-        if class_obj['num_batches'] > 1:
-            practicals_count = cur.execute('SELECT COUNT(DISTINCT subject_id) FROM courses WHERE class_id = ? AND is_lab = 1', (class_obj['class_id'],)).fetchone()[0]
-            if class_obj['num_batches'] > practicals_count:
-                 warnings.append(f"For class '{class_obj['name']}', the number of batches ({class_obj['num_batches']}) is greater than assigned practical subjects ({practicals_count}). Some batches will miss practicals.")
+        num_batches = class_obj['num_batches']
+        if num_batches > 1:
+            total_practical_blocks = 0
+            class_practicals = [c for c in all_courses if c['class_id'] == class_obj['class_id']]
+            
+            for practical_course in class_practicals:
+                total_practical_blocks += practical_course['weekly_lectures'] // 2
+            
+            if total_practical_blocks < num_batches:
+                warnings.append(
+                    f"For class '{class_obj['name']}', number of batches ({num_batches}) is greater than "
+                    f"available practical blocks ({total_practical_blocks}). Some batches may miss practicals."
+                )
 
     teachers = cur.execute('SELECT teachers.*, teacher_preferences.preference FROM teachers LEFT JOIN teacher_preferences ON teachers.teacher_id = teacher_preferences.teacher_id').fetchall()
     subjects = cur.execute('SELECT * FROM subjects').fetchall()
@@ -521,7 +535,7 @@ def api_get_timetable(class_name):
     cur = db.cursor()
     cur.execute('SELECT class_id FROM classes WHERE name = ?', (class_name,))
     class_id_row = cur.fetchone()
-    if class_id_row is None:
+    if not class_id_row:
         return jsonify({'error': 'Class not found'}), 404
     class_id = class_id_row['class_id']
     
@@ -538,55 +552,198 @@ def api_get_timetable(class_name):
         JOIN classrooms c ON ts.classroom_id = c.classroom_id
         WHERE ts.class_id = ?
     '''
+    db_slots = cur.execute(slots_query, (class_id,)).fetchall()
+
+    for day in DAYS:
+        for teachable_slot in TEACHABLE_SLOTS:
+            slot_start = teachable_slot['start_time']
+            slot_end = teachable_slot['end_time']
+            
+            for db_slot in db_slots:
+                if db_slot['day'] == day and not (slot_end <= db_slot['time_start'] or slot_start >= db_slot['time_end']):
+                    # Check for duplicates before appending
+                    is_already_added = any(s['slot_id'] == db_slot['slot_id'] for s in grid[day][slot_start])
+                    if not is_already_added:
+                        grid[day][slot_start].append(dict(db_slot))
+    
+    # Fetch options for the modal
+    cur.execute('SELECT teacher_id, name FROM teachers')
+    teachers = [dict(row) for row in cur.fetchall()]
+    cur.execute('SELECT subject_id, name FROM subjects')
+    subjects = [dict(row) for row in cur.fetchall()]
+    cur.execute('SELECT classroom_id, name FROM classrooms')
+    classrooms = [dict(row) for row in cur.fetchall()]
+    
+    return jsonify({
+        'grid': grid, 
+        'days': DAYS, 
+        'slots_full': [dict(s) for s in SLOTS],
+        'options': {'teachers': teachers, 'subjects': subjects, 'classrooms': classrooms}
+    })
+
+
+@app.route('/api/timetable/update', methods=['POST'])
+@login_required
+def api_update():
+    data = request.json
+    slot_id = data.get('slot_id')
+    db = get_db()
+    cur = db.cursor()
+    
+    cur.execute('SELECT course_id FROM courses WHERE subject_id = ? AND class_id = ?', 
+                (data['subject_id'], data['class_id']))
+    course = cur.fetchone()
+
+    if not course:
+        return jsonify({'status': 'error', 'message': 'This subject is not assigned to this class.'}), 400
+
+    course_id = course['course_id']
+    
+    try:
+        if slot_id:
+            cur.execute('''
+                UPDATE timetable_slots 
+                SET day = ?, time_start = ?, time_end = ?, teacher_id = ?, classroom_id = ?, course_id = ?
+                WHERE slot_id = ?
+            ''', (data['day'], data['time_start'], data['time_end'], data['teacher_id'], data['classroom_id'], course_id, slot_id))
+        else:
+            cur.execute('''
+                INSERT INTO timetable_slots (class_id, day, time_start, time_end, teacher_id, classroom_id, course_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (data['class_id'], data['day'], data['time_start'], data['time_end'], data['teacher_id'], data['classroom_id'], course_id))
+        db.commit()
+        return jsonify({'status': 'success', 'message': 'Timetable updated successfully.'})
+    except Exception as e:
+        db.rollback()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/timetable/delete', methods=['POST'])
+@login_required
+def api_delete():
+    data = request.json
+    slot_id = data.get('slot_id')
+
+    if not slot_id:
+        return jsonify({'status': 'error', 'message': 'Invalid slot ID.'}), 400
+
+    db = get_db()
+    try:
+        db.execute('DELETE FROM timetable_slots WHERE slot_id = ?', (slot_id,))
+        db.commit()
+        return jsonify({'status': 'success', 'message': 'Slot cleared successfully.'})
+    except Exception as e:
+        db.rollback()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+def get_timetable_data_for_export(class_name):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute('SELECT class_id FROM classes WHERE name = ?', (class_name,))
+    class_id_row = cur.fetchone()
+    if not class_id_row:
+        return None, None
+    class_id = class_id_row['class_id']
+
+    slots_full = get_slot_times()
+    teachable_slots = [s for s in slots_full if s['is_break'] == 0]
+    grid = {day: {slot['start_time']: [] for slot in teachable_slots} for day in DAYS}
+
+    slots_query = '''
+        SELECT ts.*, t.name as teacher_name, s.name as subject_name, c.name as classroom_name, co.is_lab
+        FROM timetable_slots ts
+        JOIN courses co ON ts.course_id = co.course_id
+        JOIN subjects s ON co.subject_id = s.subject_id
+        JOIN teachers t ON ts.teacher_id = t.teacher_id
+        JOIN classrooms c ON ts.classroom_id = c.classroom_id
+        WHERE ts.class_id = ?
+    '''
     cur.execute(slots_query, (class_id,))
     slots = cur.fetchall()
-    
+
     for slot in slots:
         start_time = slot['time_start']
         day = slot['day']
         if day in grid and start_time in grid[day]:
             grid[day][start_time].append(dict(slot))
-            
-    cur.execute('SELECT teachers.teacher_id, teachers.name, teacher_preferences.preference FROM teachers LEFT JOIN teacher_preferences ON teachers.teacher_id = teacher_preferences.teacher_id')
-    teachers = [dict(row) for row in cur.fetchall()]
-    cur.execute('SELECT subject_id, name, code FROM subjects')
-    subjects = [dict(row) for row in cur.fetchall()]
-    cur.execute('SELECT classroom_id, name, is_lab FROM classrooms')
-    classrooms = [dict(row) for row in cur.fetchall()]
-    cur.execute('SELECT course_id, subject_id, teacher_id, is_lab FROM courses WHERE class_id = ?', (class_id,))
-    courses = [dict(row) for row in cur.fetchall()]
-    cur.execute('SELECT class_id, name FROM classes')
-    classes = [dict(row) for row in cur.fetchall()]
-
-    return jsonify({
-        'grid': grid, 
-        'days': DAYS, 
-        'slots_full': [dict(s) for s in SLOTS],
-        'options': {'teachers': teachers, 'subjects': subjects, 'classrooms': classrooms, 'courses': courses, 'classes': classes}
-    })
-
-@app.route('/api/timetable/update', methods=['POST'])
-@login_required
-def api_update():
-    # This function remains unchanged
-    pass
-
-@app.route('/api/timetable/delete', methods=['POST'])
-@login_required
-def api_delete():
-    # This function remains unchanged
-    pass
+    
+    return grid, slots_full
 
 @app.route('/api/export/pdf/<class_name>')
 def export_timetable_pdf(class_name):
-    # This function remains unchanged
-    pass
+    grid, slots_full = get_timetable_data_for_export(class_name)
+    if grid is None:
+        return "Class not found", 404
+    
+    pdf = FPDF(orientation='L', unit='mm', format='A4')
+    pdf.add_page()
+    pdf.set_font('Arial', 'B', 16)
+    pdf.cell(0, 10, f'Timetable for {class_name}', 0, 1, 'C')
+    pdf.ln(5)
+
+    pdf.set_font('Arial', 'B', 10)
+    col_width = (pdf.w - 20) / (len(DAYS) + 1)
+    
+    pdf.cell(col_width, 10, 'Time', 1, 0, 'C')
+    for day in DAYS:
+        pdf.cell(col_width, 10, day, 1, 0, 'C')
+    pdf.ln()
+
+    pdf.set_font('Arial', '', 8)
+    for slot in slots_full:
+        time_formatted = f"{slot['start_time']} - {slot['end_time']}"
+        if slot['is_break'] == 1:
+            pdf.cell(col_width, 10, time_formatted, 1, 0, 'C')
+            pdf.cell(col_width * len(DAYS), 10, slot['break_name'], 1, 1, 'C')
+        else:
+            y_before = pdf.get_y()
+            pdf.multi_cell(col_width, 15, time_formatted, 1, 'C')
+            pdf.set_y(y_before)
+
+            for day in DAYS:
+                pdf.set_x(pdf.get_x() + col_width)
+                cell_data_array = grid.get(day, {}).get(slot['start_time'], [])
+                text = "\n".join([f"{d['subject_name']}\n({d['teacher_name']})\n@{d['classroom_name']}" for d in cell_data_array])
+                pdf.multi_cell(col_width, 15, text, 1, 'C')
+                pdf.set_y(y_before)
+            pdf.set_y(y_before + 15)
+
+    pdf_bytes = pdf.output(dest='S').encode('latin-1')
+    buffer = io.BytesIO(pdf_bytes)
+    buffer.seek(0)
+    return send_file(buffer, as_attachment=True, download_name=f'{class_name}_timetable.pdf', mimetype='application/pdf')
 
 @app.route('/api/export/excel/<class_name>')
 def export_timetable_excel(class_name):
-    # This function remains unchanged
-    pass
+    grid, slots_full = get_timetable_data_for_export(class_name)
+    if grid is None:
+        return "Class not found", 404
 
+    df_data = {'Time': [f"{s['start_time']} - {s['end_time']}" for s in slots_full]}
+    for day in DAYS:
+        day_column = []
+        for slot in slots_full:
+            if slot['is_break'] == 1:
+                day_column.append(slot['break_name'])
+            else:
+                cell_data_array = grid.get(day, {}).get(slot['start_time'], [])
+                day_column.append("\n".join([f"{d['subject_name']} ({d['teacher_name']}) @{d['classroom_name']}" for d in cell_data_array]))
+        df_data[day] = day_column
+    
+    df = pd.DataFrame(df_data)
+    
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='Timetable')
+        worksheet = writer.sheets['Timetable']
+        for idx, col in enumerate(df):
+            series = df[col]
+            max_len = max((series.astype(str).map(len).max(), len(str(series.name)))) + 2
+            worksheet.set_column(idx, idx, max_len)
+ 
+    output.seek(0)
+    
+    return send_file(output, as_attachment=True, download_name=f'{class_name}_timetable.xlsx', mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 if __name__ == '__main__':
     with app.app_context():
