@@ -169,16 +169,31 @@ def generate_timetable():
     SLOTS = get_slot_times()
     TEACHABLE_SLOTS = [s for s in SLOTS if s['is_break'] == 0]
     
-    grid = {day: {slot['start_time']: {'teachers': set(), 'classrooms': set(), 'batches': defaultdict(set)} for slot in TEACHABLE_SLOTS} for day in DAYS}
+    # New check for practical preference
+    practical_preference = cur.execute("SELECT value FROM generation_settings WHERE key = 'practical_preference'").fetchone()['value']
 
-    def is_block_free(day, start_idx, duration, teacher_id, classroom_id, class_id, batch_number=None):
+
+    grid = {day: {slot['start_time']: {'teachers': set(), 'classrooms': set(), 'batches': defaultdict(set), 'subjects': set()} for slot in TEACHABLE_SLOTS} for day in DAYS}
+
+
+    def is_block_free(day, start_idx, duration, teacher_id, classroom_id, class_id, subject_id, batch_number=None):
         if start_idx + duration > len(TEACHABLE_SLOTS):
             return False
+            
+        # New check for one lecture per teacher per day
+        for slot in grid[day].values():
+            if teacher_id in slot['teachers']:
+                return False
+
         for i in range(duration):
             slot_time = TEACHABLE_SLOTS[start_idx + i]['start_time']
             slot = grid[day][slot_time]
             
             if teacher_id in slot['teachers'] or classroom_id in slot['classrooms']:
+                return False
+
+            # New check to prevent same subject lecture twice a day for the same class
+            if subject_id in slot['subjects']:
                 return False
             
             class_batches = slot['batches'][class_id]
@@ -188,14 +203,28 @@ def generate_timetable():
             else: # Theory check
                 if len(class_batches) > 0:
                     return False
+        
+        # New check for a gap between consecutive lectures
+        if start_idx > 0:
+            prev_slot_time = TEACHABLE_SLOTS[start_idx - 1]['start_time']
+            if 0 in grid[day][prev_slot_time]['batches'][class_id]:
+                return False
+
+        if start_idx + duration < len(TEACHABLE_SLOTS):
+            next_slot_time = TEACHABLE_SLOTS[start_idx + duration]['start_time']
+            if 0 in grid[day][next_slot_time]['batches'][class_id]:
+                return False
+
+
         return True
 
-    def book_block(day, start_idx, duration, teacher_id, classroom_id, class_id, batch_number=None):
+    def book_block(day, start_idx, duration, teacher_id, classroom_id, class_id, subject_id, batch_number=None):
         for i in range(duration):
             slot_time = TEACHABLE_SLOTS[start_idx + i]['start_time']
             slot = grid[day][slot_time]
             slot['teachers'].add(teacher_id)
             slot['classrooms'].add(classroom_id)
+            slot['subjects'].add(subject_id)
             if batch_number:
                 slot['batches'][class_id].add(batch_number)
             else:
@@ -204,17 +233,19 @@ def generate_timetable():
     sessions_to_schedule = []
     for course in courses:
         if course['is_lab']:
-            num_practical_blocks = course['weekly_lectures'] // 2
-            for _ in range(num_practical_blocks):
-                for batch in range(1, course['num_batches'] + 1):
-                    sessions_to_schedule.append({'type': 'practical', 'course': course, 'batch': batch, 'duration': 2})
+            # Each batch has one practical session per week.
+            for batch in range(1, course['num_batches'] + 1):
+                sessions_to_schedule.append({
+                    'type': 'practical',
+                    'course': course,
+                    'batch': batch,
+                    'duration': 2 # Assuming practicals are 2 slots long
+                })
         else:
-            num_double_slots = course['weekly_lectures'] // 2
-            num_single_slots = course['weekly_lectures'] % 2
-            for _ in range(num_double_slots):
-                sessions_to_schedule.append({'type': 'lecture', 'course': course, 'duration': 2})
-            for _ in range(num_single_slots):
+            # This is for theory courses.
+            for _ in range(course['weekly_lectures']):
                 sessions_to_schedule.append({'type': 'lecture', 'course': course, 'duration': 1})
+
     
     random.shuffle(sessions_to_schedule)
 
@@ -227,13 +258,19 @@ def generate_timetable():
         if not lab_classroom: continue
         
         placed = False
+        
+        # Handle morning preference for practicals
         possible_slots = list(range(len(TEACHABLE_SLOTS) - (duration - 1)))
-        random.shuffle(possible_slots)
+        if practical_preference == 'morning':
+            possible_slots = [0] # Prioritize the first slot (index 0) for a 2-slot practical
+        else:
+            random.shuffle(possible_slots)
+
         
         for day in random.sample(DAYS, len(DAYS)):
             for slot_idx in possible_slots:
-                if is_block_free(day, slot_idx, duration, teacher_id, lab_classroom['classroom_id'], course['class_id'], batch):
-                    book_block(day, slot_idx, duration, teacher_id, lab_classroom['classroom_id'], course['class_id'], batch)
+                if is_block_free(day, slot_idx, duration, teacher_id, lab_classroom['classroom_id'], course['class_id'], course['subject_id'], batch):
+                    book_block(day, slot_idx, duration, teacher_id, lab_classroom['classroom_id'], course['class_id'], course['subject_id'], batch)
                     start_time = TEACHABLE_SLOTS[slot_idx]['start_time']
                     end_time = TEACHABLE_SLOTS[slot_idx + duration - 1]['end_time']
                     cur.execute('INSERT INTO timetable_slots (class_id, day, time_start, time_end, course_id, teacher_id, classroom_id, batch_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -257,8 +294,8 @@ def generate_timetable():
             for slot_idx in possible_slots:
                 if not theory_rooms: break
                 room = random.choice(theory_rooms)
-                if is_block_free(day, slot_idx, duration, teacher_id, room['classroom_id'], course['class_id']):
-                    book_block(day, slot_idx, duration, teacher_id, room['classroom_id'], course['class_id'])
+                if is_block_free(day, slot_idx, duration, teacher_id, room['classroom_id'], course['class_id'], course['subject_id']):
+                    book_block(day, slot_idx, duration, teacher_id, room['classroom_id'], course['class_id'], course['subject_id'])
                     start_time = TEACHABLE_SLOTS[slot_idx]['start_time']
                     end_time = TEACHABLE_SLOTS[slot_idx + duration - 1]['end_time']
                     cur.execute('INSERT INTO timetable_slots (class_id, day, time_start, time_end, course_id, teacher_id, classroom_id, batch_number) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)',
@@ -439,16 +476,12 @@ def manage():
     for class_obj in classes_list:
         num_batches = class_obj['num_batches']
         if num_batches > 1:
-            total_practical_blocks = 0
             class_practicals = [c for c in all_courses if c['class_id'] == class_obj['class_id']]
             
-            for practical_course in class_practicals:
-                total_practical_blocks += practical_course['weekly_lectures'] // 2
-            
-            if total_practical_blocks < num_batches:
-                warnings.append(
-                    f"For class '{class_obj['name']}', number of batches ({num_batches}) is greater than "
-                    f"available practical blocks ({total_practical_blocks}). Some batches may miss practicals."
+            if len(class_practicals) < num_batches:
+                 warnings.append(
+                    f"For class '{class_obj['name']}', the number of batches ({num_batches}) is greater than "
+                    f"the number of assigned practical courses ({len(class_practicals)}). Some batches may miss practicals."
                 )
 
     teachers = cur.execute('SELECT teachers.*, teacher_preferences.preference FROM teachers LEFT JOIN teacher_preferences ON teachers.teacher_id = teacher_preferences.teacher_id').fetchall()
@@ -561,12 +594,10 @@ def api_get_timetable(class_name):
             
             for db_slot in db_slots:
                 if db_slot['day'] == day and not (slot_end <= db_slot['time_start'] or slot_start >= db_slot['time_end']):
-                    # Check for duplicates before appending
                     is_already_added = any(s['slot_id'] == db_slot['slot_id'] for s in grid[day][slot_start])
                     if not is_already_added:
                         grid[day][slot_start].append(dict(db_slot))
     
-    # Fetch options for the modal
     cur.execute('SELECT teacher_id, name FROM teachers')
     teachers = [dict(row) for row in cur.fetchall()]
     cur.execute('SELECT subject_id, name FROM subjects')
